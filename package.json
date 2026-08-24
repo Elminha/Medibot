@@ -1,0 +1,24 @@
+{
+    "name": "medibot",
+    "version": "1.0.0",
+    "private": true,
+    "description": "RAG para perguntas sobre bulas de medicamentos usando Gemini File Search.",
+    "type": "module",
+    "scripts": {
+        "build": "tsc",
+        "create:vector-store": "tsx src/createVectorStore.ts",
+        "create:file-search-store": "tsx src/createVectorStore.ts",
+        "upload:bula": "tsx src/uploadBula.ts",
+        "search:bula": "tsc && node dist/searchBula.js",
+        "ask:bula": "tsx src/askBula.ts"
+    },
+    "dependencies": {
+        "@google/genai": "^2.18.0",
+        "dotenv": "^16.4.7"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.2",
+        "tsx": "^4.23.12",
+        "typescript": "^5.7.2"
+    }
+}
