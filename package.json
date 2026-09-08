@@ -2,7 +2,7 @@
     "name": "medibot",
     "version": "1.0.0",
     "private": true,
-    "description": "RAG para perguntas sobre bulas de medicamentos usando Gemini File Search.",
+    "description": "RAG para perguntas sobre bulas de medicamentos usando OpenAI Vector Stores.",
     "type": "module",
     "scripts": {
         "build": "tsc",
@@ -13,8 +13,8 @@
         "ask:bula": "tsx src/askBula.ts"
     },
     "dependencies": {
-        "@google/genai": "^2.18.0",
-        "dotenv": "^16.4.7"
+        "dotenv": "^16.4.7",
+        "openai": "^7.8.0"
     },
     "devDependencies": {
         "@types/node": "^22.10.2",

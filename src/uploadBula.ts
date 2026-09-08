@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { gemini, getFileSearchStoreName } from "./config.js";
+import { getVectorStoreId, openai } from "./config.js";
 
 const pdfPath = process.argv[2];
-const fileSearchStoreName = getFileSearchStoreName(process.argv[3]);
+const vectorStoreId = getVectorStoreId(process.argv[3]);
 
 if (!pdfPath) {
-    throw new Error("Uso: npm run upload:bula -- <caminho-do-pdf> [file-search-store-name]");
+    throw new Error("Uso: npm run upload:bula -- <caminho-do-pdf> [vector-store-id]");
 }
 
 const resolvedPdfPath = path.resolve(pdfPath);
@@ -19,23 +19,16 @@ if (path.extname(resolvedPdfPath).toLowerCase() !== ".pdf") {
     throw new Error("A fonte de conhecimento deve ser um arquivo PDF.");
 }
 
-console.log("Enviando a bula para o Gemini e aguardando a indexação...");
-let operation = await gemini.fileSearchStores.uploadToFileSearchStore({
-    file: resolvedPdfPath,
-    fileSearchStoreName,
-    config: {
-        displayName: path.basename(resolvedPdfPath),
-        mimeType: "application/pdf"
-    }
-});
+console.log("Enviando a bula para a OpenAI e aguardando a indexação...");
+const vectorStoreFile = await openai.vectorStores.files.uploadAndPoll(
+    vectorStoreId,
+    fs.createReadStream(resolvedPdfPath)
+);
 
-while (!operation.done) {
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
-    operation = await gemini.operations.get({ operation });
-}
-
-if (operation.error) {
-    throw new Error(`A indexação falhou: ${JSON.stringify(operation.error)}`);
+if (vectorStoreFile.status !== "completed") {
+    throw new Error(
+        `A indexação falhou: ${vectorStoreFile.last_error?.message || vectorStoreFile.status}`
+    );
 }
 
 console.log("Bula indexada com sucesso.");

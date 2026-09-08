@@ -1,23 +1,23 @@
 import "dotenv/config";
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 
-const apiKey = process.env.GEMINI_API_KEY;
+const apiKey = process.env.OPENAI_API_KEY;
 
 if (!apiKey) {
-    throw new Error("GEMINI_API_KEY não foi configurada. Crie um arquivo .env.");
+    throw new Error("OPENAI_API_KEY não foi configurada. Crie um arquivo .env.");
 }
 
-export const gemini = new GoogleGenAI({ apiKey });
-export const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+export const openai = new OpenAI({ apiKey });
+export const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-export function getFileSearchStoreName(argument?: string): string {
-    const fileSearchStoreName = argument || process.env.FILE_SEARCH_STORE_NAME;
+export function getVectorStoreId(argument?: string): string {
+    const vectorStoreId = argument || process.env.VECTOR_STORE_ID;
 
-    if (!fileSearchStoreName) {
+    if (!vectorStoreId) {
         throw new Error(
-            "FILE_SEARCH_STORE_NAME não foi informado. Passe-o como argumento ou configure-o no .env."
+            "VECTOR_STORE_ID não foi informado. Passe-o como argumento ou configure-o no .env."
         );
     }
 
-    return fileSearchStoreName;
+    return vectorStoreId;
 }
