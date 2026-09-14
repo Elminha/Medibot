@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="MediBot, assistente de apoio à compreensão de bulas." />
+    <title>MediBot | Consulta de bulas</title>
+    <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+    <main class="app-shell">
+        <header class="app-header">
+            <div class="brand-mark" aria-hidden="true">+</div>
+            <div>
+                <h1>MediBot</h1>
+                <p>Assistente de apoio à compreensão de bulas</p>
+            </div>
+        </header>
+
+        <section class="chat-panel" aria-label="Conversa com o MediBot">
+            <div class="messages" id="messages" aria-live="polite" aria-relevant="additions">
+                <article class="message message-bot">
+                    <div class="message-label">MediBot</div>
+                    <p>Olá! Eu sou o MediBot. Posso ajudar você a compreender informações presentes nas bulas dos medicamentos disponíveis no sistema. Faça uma pergunta sobre um medicamento.</p>
+                </article>
+            </div>
+
+            <div class="suggestions" aria-label="Perguntas de exemplo">
+                <span>Experimente perguntar:</span>
+                <button type="button" data-question="Quais são as contraindicações da dipirona?">Contraindicações da dipirona</button>
+                <button type="button" data-question="Quais são os efeitos adversos da dipirona?">Efeitos adversos da dipirona</button>
+                <button type="button" data-question="Quais cuidados são descritos na bula da dipirona?">Cuidados com a dipirona</button>
+            </div>
+
+            <form class="composer" id="chat-form" novalidate>
+                <label class="sr-only" for="question">Sua pergunta sobre uma bula</label>
+                <textarea id="question" name="question" rows="1" maxlength="2000" placeholder="Digite sua pergunta sobre um medicamento..." required></textarea>
+                <button id="send-button" type="submit">Enviar</button>
+            </form>
+            <p class="form-feedback" id="form-feedback" role="alert"></p>
+        </section>
+
+        <p class="safety-note">Informação educativa baseada nas bulas disponíveis no sistema. O MediBot não realiza diagnóstico, não prescreve medicamentos e não substitui a orientação de um profissional de saúde.</p>
+    </main>
+    <script src="/app.js" defer></script>
+</body>
+</html>
