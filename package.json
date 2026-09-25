@@ -11,7 +11,8 @@
         "upload:bula": "tsx src/uploadBula.ts",
         "search:bula": "tsc && node dist/searchBula.js",
         "ask:bula": "tsx src/askBula.ts",
-        "db:migrate": "tsx src/database/migrate.ts"
+        "db:migrate": "tsx src/database/migrate.ts",
+        "db:seed:development": "tsx src/database/seedDevelopmentUser.ts"
     },
     "dependencies": {
         "dotenv": "^16.4.7",
