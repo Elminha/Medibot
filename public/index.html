@@ -40,6 +40,81 @@
             <p class="form-feedback" id="form-feedback" role="alert"></p>
         </section>
 
+        <section class="medications-panel" aria-labelledby="medications-title">
+            <div class="section-heading">
+                <div>
+                    <h2 id="medications-title">Meus medicamentos</h2>
+                    <p>Organize os medicamentos que você acompanha.</p>
+                </div>
+            </div>
+
+            <form class="medication-form" id="medication-form" novalidate>
+                <div class="medication-fields">
+                    <label>
+                        Nome do medicamento
+                        <input id="medication-name" name="name" type="text" maxlength="255" required />
+                    </label>
+                    <label>
+                        Dosagem <span>(opcional)</span>
+                        <input id="medication-dosage" name="dosage" type="text" maxlength="255" />
+                    </label>
+                    <label class="medication-instructions">
+                        Instruções <span>(opcional)</span>
+                        <textarea id="medication-instructions" name="instructions" rows="2" maxlength="1000"></textarea>
+                    </label>
+                </div>
+                <button class="primary-button" id="add-medication-button" type="submit">Adicionar medicamento</button>
+            </form>
+            <p class="medication-feedback" id="medication-feedback" role="status" aria-live="polite"></p>
+
+            <div class="medication-list" id="medication-list" aria-live="polite" aria-busy="true">
+                <p class="medication-state">Carregando medicamentos...</p>
+            </div>
+        </section>
+
+        <section class="reminders-panel" aria-labelledby="reminders-title">
+            <div class="section-heading">
+                <div>
+                    <h2 id="reminders-title">Meus lembretes</h2>
+                    <p>Programe horários para os medicamentos que você acompanha.</p>
+                </div>
+            </div>
+
+            <form class="reminder-form" id="reminder-form" novalidate>
+                <div class="reminder-fields">
+                    <label>
+                        Medicamento
+                        <select id="reminder-medication" name="medicationId" required disabled>
+                            <option value="">Carregando medicamentos...</option>
+                        </select>
+                    </label>
+                    <label>
+                        Horário
+                        <input id="reminder-time" name="time" type="time" required />
+                    </label>
+                    <label>
+                        Frequência
+                        <select id="reminder-frequency" name="frequency" required>
+                            <option value="daily">Todos os dias</option>
+                            <option value="weekly">Semanalmente</option>
+                            <option value="weekdays">Dias úteis</option>
+                            <option value="custom">Personalizada</option>
+                        </select>
+                    </label>
+                    <label class="active-field reminder-active-field">
+                        <input id="reminder-active" name="active" type="checkbox" checked />
+                        Lembrete ativo
+                    </label>
+                </div>
+                <button class="primary-button" id="add-reminder-button" type="submit" disabled>Adicionar lembrete</button>
+            </form>
+            <p class="reminder-feedback" id="reminder-feedback" role="status" aria-live="polite"></p>
+
+            <div class="reminder-list" id="reminder-list" aria-live="polite" aria-busy="true">
+                <p class="reminder-state">Carregando lembretes...</p>
+            </div>
+        </section>
+
         <p class="safety-note">Informação educativa baseada nas bulas disponíveis no sistema. O MediBot não realiza diagnóstico, não prescreve medicamentos e não substitui a orientação de um profissional de saúde.</p>
     </main>
     <script src="/app.js" defer></script>
