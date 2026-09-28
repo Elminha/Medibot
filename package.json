@@ -5,6 +5,8 @@
     "description": "RAG para perguntas sobre bulas de medicamentos usando OpenAI Vector Stores.",
     "type": "module",
     "scripts": {
+        "dev": "tsx watch src/server.ts",
+        "start": "node dist/server.js",
         "build": "tsc",
         "create:vector-store": "tsx src/createVectorStore.ts",
         "create:file-search-store": "tsx src/createVectorStore.ts",

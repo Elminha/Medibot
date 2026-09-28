@@ -19,6 +19,10 @@ app.use("/api/bula", bulaRoutes);
 app.use("/api/medications", medicationRoutes);
 app.use("/api/reminders", reminderRoutes);
 
-app.listen(port, () => {
-    console.log(`MediBot API em execução na porta ${port}.`);
-});
+if (!process.env.VERCEL) {
+    app.listen(port, () => {
+        console.log(`MediBot API em execução na porta ${port}.`);
+    });
+}
+
+export default app;

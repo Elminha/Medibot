@@ -12,13 +12,22 @@ const requiredDatabaseVariables = [
 let pool: Pool | undefined;
 
 function getDatabaseConfig(): PoolConfig {
+    const connectionString = process.env.DATABASE_URL?.trim();
+
+    if (connectionString) {
+        return {
+            connectionString,
+            ssl: { rejectUnauthorized: false }
+        };
+    }
+
     const missingVariables = requiredDatabaseVariables.filter(
         (variable) => !process.env[variable]?.trim()
     );
 
     if (missingVariables.length > 0) {
         throw new Error(
-            `Configura\u00e7\u00e3o do banco de dados incompleta. Defina: ${missingVariables.join(", ")}.`
+            `Configura\u00e7\u00e3o do banco de dados incompleta. Defina DATABASE_URL ou: ${missingVariables.join(", ")}.`
         );
     }
 
