@@ -4,8 +4,93 @@ const messages = document.querySelector("#messages");
 const sendButton = document.querySelector("#send-button");
 const feedback = document.querySelector("#form-feedback");
 const suggestionButtons = document.querySelectorAll("[data-question]");
+const authTokenStorageKey = "medibot_auth_token";
+const authView = document.querySelector("#auth-view");
+const authenticatedApp = document.querySelector("#authenticated-app");
+const loginPanel = document.querySelector("#login-panel");
+const registerPanel = document.querySelector("#register-panel");
+const loginForm = document.querySelector("#login-form");
+const registerForm = document.querySelector("#register-form");
+const loginFeedback = document.querySelector("#login-feedback");
+const registerFeedback = document.querySelector("#register-feedback");
+const loggedUser = document.querySelector("#logged-user");
+const historyList = document.querySelector("#history-list");
+const historyDetail = document.querySelector("#history-detail");
 
 let isWaiting = false;
+
+function getAuthToken() {
+    return window.localStorage.getItem(authTokenStorageKey)?.trim() || "";
+}
+
+async function authenticatedFetch(url, options = {}) {
+    const token = getAuthToken();
+    if (!token) throw new Error("authentication-required");
+
+    const headers = new Headers(options.headers || {});
+    headers.set("Authorization", `Bearer ${token}`);
+    const response = await fetch(url, { ...options, headers });
+
+    if (response.status === 401) {
+        showAuthentication();
+        throw new Error("authentication-required");
+    }
+    return response;
+}
+
+function showLogin(message = "", success = false) {
+    authView.hidden = false;
+    authenticatedApp.hidden = true;
+    loginPanel.hidden = false;
+    registerPanel.hidden = true;
+    loginFeedback.textContent = message;
+    loginFeedback.classList.toggle("success", success);
+}
+
+function showRegister() {
+    loginPanel.hidden = true;
+    registerPanel.hidden = false;
+    loginFeedback.textContent = "";
+    registerFeedback.textContent = "";
+    registerFeedback.classList.remove("success");
+    document.querySelector("#register-name").focus();
+}
+
+function clearApplicationData() {
+    messages.replaceChildren();
+    addMessage("Olá! Eu sou o MediBot. Posso ajudar você a compreender informações presentes nas bulas dos medicamentos disponíveis no sistema. Faça uma pergunta sobre um medicamento.", "bot");
+    medicationList.replaceChildren();
+    reminderList.replaceChildren();
+    historyList.replaceChildren();
+    historyDetail.replaceChildren();
+    questionInput.value = "";
+    medicationForm.reset();
+    reminderForm.reset();
+    reminderActiveInput.checked = true;
+    currentMedications = [];
+}
+
+function showAuthentication(message = "") {
+    window.localStorage.removeItem(authTokenStorageKey);
+    clearApplicationData();
+    showLogin(message);
+}
+
+function showApplication(user) {
+    authView.hidden = true;
+    authenticatedApp.hidden = false;
+    loggedUser.textContent = user.name ? `Olá, ${user.name}` : "Usuário autenticado";
+    Promise.all([loadMedications(), loadReminders(), loadQueryHistory()]);
+}
+
+async function readError(response, fallback) {
+    try {
+        const data = await response.json();
+        return typeof data.error === "string" ? data.error : fallback;
+    } catch {
+        return fallback;
+    }
+}
 
 function scrollToLatest() {
     messages.scrollTop = messages.scrollHeight;
@@ -64,6 +149,12 @@ async function sendQuestion(question) {
     }
     if (isWaiting) return;
 
+    const token = window.localStorage.getItem(authTokenStorageKey)?.trim();
+    if (!token) {
+        feedback.textContent = "Faça login para consultar uma bula.";
+        return;
+    }
+
     addMessage(trimmedQuestion, "user");
     questionInput.value = "";
     setWaiting(true);
@@ -73,9 +164,12 @@ async function sendQuestion(question) {
     const timeout = window.setTimeout(() => controller.abort(), 45000);
 
     try {
-        const response = await fetch("/api/bula", {
+        const response = await authenticatedFetch("/api/bula", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+            },
             body: JSON.stringify({ question: trimmedQuestion }),
             signal: controller.signal
         });
@@ -91,6 +185,7 @@ async function sendQuestion(question) {
             ? data.sources.filter((source) => typeof source === "string" && source.trim())
             : [];
         addMessage(data.answer, "bot", sources);
+        loadQueryHistory();
     } catch (error) {
         const errorName = error && typeof error === "object" ? error.name : "";
         const errorMessage = error && typeof error === "object" ? error.message : "";
@@ -284,7 +379,7 @@ function showMedicationEditor(card, medication) {
         saveButton.disabled = true;
         setMedicationFeedback("");
         try {
-            const response = await fetch(`/api/medications/${medication.id}`, {
+            const response = await authenticatedFetch(`/api/medications/${medication.id}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(medicationBody(updatedName, dosageInput.value, instructionsInput.value, activeInput.checked))
@@ -326,7 +421,7 @@ async function loadMedications() {
     medicationList.append(loading);
 
     try {
-        const response = await fetch("/api/medications");
+        const response = await authenticatedFetch("/api/medications");
         if (!response.ok) throw new Error(await medicationError(response, "Não foi possível carregar os medicamentos."));
         const data = await response.json();
         if (!data || !Array.isArray(data.medications)) throw new Error("Resposta inesperada ao carregar medicamentos.");
@@ -347,7 +442,7 @@ async function deleteMedication(id, name) {
     if (!window.confirm(`Excluir o medicamento "${name}"?`)) return;
     setMedicationFeedback("");
     try {
-        const response = await fetch(`/api/medications/${id}`, { method: "DELETE" });
+        const response = await authenticatedFetch(`/api/medications/${id}`, { method: "DELETE" });
         if (!response.ok) throw new Error(await medicationError(response, "Não foi possível excluir o medicamento."));
         setMedicationFeedback("Medicamento excluído com sucesso.", "success");
         await Promise.all([loadMedications(), loadReminders()]);
@@ -370,7 +465,7 @@ medicationForm.addEventListener("submit", async (event) => {
     setMedicationLoading(true);
     setMedicationFeedback("");
     try {
-        const response = await fetch("/api/medications", {
+        const response = await authenticatedFetch("/api/medications", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(medicationBody(name, medicationDosageInput.value, medicationInstructionsInput.value))
@@ -525,7 +620,7 @@ function showReminderEditor(card, reminder) {
         saveButton.disabled = true;
         setReminderFeedback("");
         try {
-            const response = await fetch(`/api/reminders/${reminder.id}`, {
+            const response = await authenticatedFetch(`/api/reminders/${reminder.id}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(reminderBody(medicationInput.value, timeInput.value, frequencyInput.value, activeInput.checked))
@@ -564,7 +659,7 @@ async function loadReminders() {
     loading.textContent = "Carregando lembretes...";
     reminderList.append(loading);
     try {
-        const response = await fetch("/api/reminders");
+        const response = await authenticatedFetch("/api/reminders");
         if (!response.ok) throw new Error(await reminderError(response, "Não foi possível carregar os lembretes."));
         const data = await response.json();
         if (!data || !Array.isArray(data.reminders)) throw new Error("Resposta inesperada ao carregar lembretes.");
@@ -584,7 +679,7 @@ async function loadReminders() {
 async function setReminderActive(reminder, active) {
     setReminderFeedback("");
     try {
-        const response = await fetch(`/api/reminders/${reminder.id}`, {
+        const response = await authenticatedFetch(`/api/reminders/${reminder.id}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ active })
@@ -601,7 +696,7 @@ async function deleteReminder(id, medicationName) {
     if (!window.confirm(`Excluir o lembrete de "${medicationName}"?`)) return;
     setReminderFeedback("");
     try {
-        const response = await fetch(`/api/reminders/${id}`, { method: "DELETE" });
+        const response = await authenticatedFetch(`/api/reminders/${id}`, { method: "DELETE" });
         if (!response.ok) throw new Error(await reminderError(response, "Não foi possível excluir o lembrete."));
         setReminderFeedback("Lembrete excluído com sucesso.", "success");
         await loadReminders();
@@ -624,7 +719,7 @@ reminderForm.addEventListener("submit", async (event) => {
     setReminderLoading(true);
     setReminderFeedback("");
     try {
-        const response = await fetch("/api/reminders", {
+        const response = await authenticatedFetch("/api/reminders", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(reminderBody(medicationId, time, reminderFrequencyInput.value, reminderActiveInput.checked))
@@ -642,4 +737,162 @@ reminderForm.addEventListener("submit", async (event) => {
     }
 });
 
-Promise.all([loadMedications(), loadReminders()]);
+function formatHistoryDate(value) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+        ? "Data não disponível"
+        : new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
+function showHistoryDetail(query) {
+    historyDetail.replaceChildren();
+    const title = document.createElement("h3");
+    title.textContent = "Sua pergunta";
+    const question = document.createElement("p");
+    question.textContent = query.question;
+    const answerTitle = document.createElement("h3");
+    answerTitle.textContent = "Resposta do MediBot";
+    const answer = document.createElement("p");
+    answer.textContent = query.answer;
+    historyDetail.append(title, question, answerTitle, answer);
+
+    const sources = Array.isArray(query.sources) ? query.sources.filter((source) => typeof source === "string" && source.trim()) : [];
+    if (sources.length) {
+        const source = document.createElement("p");
+        source.className = "message-source";
+        source.textContent = `Fonte${sources.length > 1 ? "s" : ""}: ${sources.join(", ")}`;
+        historyDetail.append(source);
+    }
+}
+
+async function loadQueryDetail(id) {
+    try {
+        const response = await authenticatedFetch(`/api/queries/${id}`);
+        if (!response.ok) throw new Error(await readError(response, "Não foi possível carregar esta consulta."));
+        const data = await response.json();
+        if (!data || !data.query) throw new Error("Resposta inesperada ao carregar a consulta.");
+        showHistoryDetail(data.query);
+    } catch (error) {
+        historyDetail.replaceChildren();
+        const message = document.createElement("p");
+        message.className = "history-state";
+        message.textContent = error instanceof Error ? error.message : "Não foi possível carregar esta consulta.";
+        historyDetail.append(message);
+    }
+}
+
+async function loadQueryHistory() {
+    historyList.setAttribute("aria-busy", "true");
+    historyList.replaceChildren();
+    try {
+        const response = await authenticatedFetch("/api/queries");
+        if (!response.ok) throw new Error(await readError(response, "Não foi possível carregar o histórico."));
+        const data = await response.json();
+        if (!data || !Array.isArray(data.queries)) throw new Error("Resposta inesperada ao carregar o histórico.");
+
+        if (!data.queries.length) {
+            const message = document.createElement("p");
+            message.className = "history-state";
+            message.textContent = "Suas consultas aparecerão aqui.";
+            historyList.append(message);
+            return;
+        }
+
+        data.queries.forEach((query, index) => {
+            const item = document.createElement("button");
+            item.type = "button";
+            item.className = "history-item";
+            const question = document.createElement("span");
+            question.className = "history-question";
+            question.textContent = query.question;
+            const date = document.createElement("span");
+            date.className = "history-date";
+            date.textContent = formatHistoryDate(query.createdAt || query.created_at);
+            item.append(question, date);
+            item.addEventListener("click", () => {
+                historyList.querySelectorAll(".history-item").forEach((button) => button.classList.remove("active"));
+                item.classList.add("active");
+                loadQueryDetail(query.id);
+            });
+            historyList.append(item);
+            if (index === 0) {
+                item.classList.add("active");
+                loadQueryDetail(query.id);
+            }
+        });
+    } catch (error) {
+        const message = document.createElement("p");
+        message.className = "history-state feedback-error";
+        message.textContent = error instanceof Error ? error.message : "Não foi possível carregar o histórico.";
+        historyList.append(message);
+    } finally {
+        historyList.setAttribute("aria-busy", "false");
+    }
+}
+
+document.querySelector("#show-register").addEventListener("click", showRegister);
+document.querySelector("#show-login").addEventListener("click", () => showLogin());
+
+loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const email = document.querySelector("#login-email").value.trim();
+    const password = document.querySelector("#login-password").value;
+    loginFeedback.textContent = "";
+    try {
+        const response = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password })
+        });
+        if (!response.ok) throw new Error(await readError(response, "Não foi possível entrar."));
+        const data = await response.json();
+        if (!data?.token || !data?.user) throw new Error("Resposta inesperada ao entrar.");
+        window.localStorage.setItem(authTokenStorageKey, data.token);
+        loginForm.reset();
+        showApplication(data.user);
+    } catch (error) {
+        loginFeedback.textContent = error instanceof Error ? error.message : "Não foi possível entrar.";
+    }
+});
+
+registerForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = document.querySelector("#register-name").value.trim();
+    const email = document.querySelector("#register-email").value.trim();
+    const password = document.querySelector("#register-password").value;
+    registerFeedback.textContent = "";
+    try {
+        const response = await fetch("/api/auth/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, email, password })
+        });
+        if (!response.ok) throw new Error(await readError(response, "Não foi possível criar a conta."));
+        registerForm.reset();
+        showLogin("Conta criada com sucesso. Agora entre com seu e-mail e senha.", true);
+    } catch (error) {
+        registerFeedback.textContent = error instanceof Error ? error.message : "Não foi possível criar a conta.";
+    }
+});
+
+document.querySelector("#logout-button").addEventListener("click", () => showAuthentication());
+
+async function initializeApplication() {
+    const token = getAuthToken();
+    if (!token) {
+        showLogin();
+        return;
+    }
+
+    try {
+        const response = await authenticatedFetch("/api/auth/me");
+        if (!response.ok) throw new Error("invalid-token");
+        const data = await response.json();
+        if (!data?.user) throw new Error("invalid-token");
+        showApplication(data.user);
+    } catch {
+        showAuthentication();
+    }
+}
+
+initializeApplication();

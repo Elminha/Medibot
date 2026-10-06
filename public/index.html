@@ -8,12 +8,48 @@
     <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-    <main class="app-shell">
+    <main class="auth-shell" id="auth-view">
+        <section class="auth-card" aria-labelledby="auth-title">
+            <div class="brand-lockup">
+                <div class="brand-mark" aria-hidden="true">+</div>
+                <span>MediBot</span>
+            </div>
+            <div id="login-panel">
+                <h1 id="auth-title">Bem-vindo ao MediBot</h1>
+                <p class="auth-description">Entre para consultar bulas, organizar seus medicamentos e acompanhar suas conversas.</p>
+                <form id="login-form" class="auth-form" novalidate>
+                    <label>E-mail<input id="login-email" type="email" autocomplete="email" required /></label>
+                    <label>Senha<input id="login-password" type="password" autocomplete="current-password" required /></label>
+                    <button class="primary-button" type="submit">Entrar</button>
+                </form>
+                <p class="auth-feedback" id="login-feedback" role="alert"></p>
+                <p class="auth-switch">Ainda não tem conta? <button type="button" class="text-button" id="show-register">Criar conta</button></p>
+            </div>
+            <div id="register-panel" hidden>
+                <h1>Crie sua conta</h1>
+                <p class="auth-description">Use seus dados para começar a usar o MediBot.</p>
+                <form id="register-form" class="auth-form" novalidate>
+                    <label>Nome<input id="register-name" type="text" autocomplete="name" required /></label>
+                    <label>E-mail<input id="register-email" type="email" autocomplete="email" required /></label>
+                    <label>Senha<input id="register-password" type="password" autocomplete="new-password" minlength="8" required /></label>
+                    <button class="primary-button" type="submit">Criar conta</button>
+                </form>
+                <p class="auth-feedback" id="register-feedback" role="alert"></p>
+                <p class="auth-switch">Já tem conta? <button type="button" class="text-button" id="show-login">Voltar para entrar</button></p>
+            </div>
+        </section>
+    </main>
+
+    <main class="app-shell" id="authenticated-app" hidden>
         <header class="app-header">
             <div class="brand-mark" aria-hidden="true">+</div>
             <div>
                 <h1>MediBot</h1>
                 <p>Assistente de apoio à compreensão de bulas</p>
+            </div>
+            <div class="user-menu">
+                <span id="logged-user" aria-live="polite"></span>
+                <button type="button" class="secondary-button" id="logout-button">Sair</button>
             </div>
         </header>
 
@@ -38,6 +74,21 @@
                 <button id="send-button" type="submit">Enviar</button>
             </form>
             <p class="form-feedback" id="form-feedback" role="alert"></p>
+        </section>
+
+        <section class="history-panel" aria-labelledby="history-title">
+            <div class="section-heading">
+                <div>
+                    <h2 id="history-title">Histórico de conversas</h2>
+                    <p>Consulte perguntas anteriores feitas ao MediBot.</p>
+                </div>
+            </div>
+            <div class="history-layout">
+                <div class="history-list" id="history-list" aria-live="polite" aria-busy="true"></div>
+                <article class="history-detail" id="history-detail" aria-live="polite">
+                    <p class="history-state">Selecione uma consulta para ver os detalhes.</p>
+                </article>
+            </div>
         </section>
 
         <section class="medications-panel" aria-labelledby="medications-title">

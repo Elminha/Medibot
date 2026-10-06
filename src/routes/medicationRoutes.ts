@@ -1,5 +1,5 @@
-import { Router, type Request, type Response } from "express";
-import { getCurrentUserId } from "../services/developmentUserService.js";
+import { Router, type Response } from "express";
+import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
 import {
     createMedication,
     deleteMedication,
@@ -11,6 +11,12 @@ import {
 } from "../services/medicationService.js";
 
 const medicationRoutes = Router();
+
+medicationRoutes.use(requireAuthentication);
+
+function getAuthenticatedUserId(request: AuthenticatedRequest): number {
+    return request.auth!.userId;
+}
 
 function parseMedicationId(value: unknown): number | undefined {
     if (typeof value !== "string") {
@@ -60,7 +66,7 @@ function sendError(response: Response, error: unknown): Response | undefined {
     return undefined;
 }
 
-medicationRoutes.post("/", async (request: Request, response: Response) => {
+medicationRoutes.post("/", async (request: AuthenticatedRequest, response: Response) => {
     const input = validateMedicationInput(request.body);
 
     if (!input) {
@@ -70,23 +76,23 @@ medicationRoutes.post("/", async (request: Request, response: Response) => {
     }
 
     try {
-        const medication = await createMedication(await getCurrentUserId(), input);
+        const medication = await createMedication(getAuthenticatedUserId(request), input);
         return response.status(201).json({ medication });
     } catch {
         return response.status(500).json({ error: "N\u00e3o foi poss\u00edvel cadastrar o medicamento." });
     }
 });
 
-medicationRoutes.get("/", async (_request: Request, response: Response) => {
+medicationRoutes.get("/", async (request: AuthenticatedRequest, response: Response) => {
     try {
-        const medications = await listMedications(await getCurrentUserId());
+        const medications = await listMedications(getAuthenticatedUserId(request));
         return response.json({ medications });
     } catch {
         return response.status(500).json({ error: "N\u00e3o foi poss\u00edvel listar os medicamentos." });
     }
 });
 
-medicationRoutes.get("/:id", async (request: Request, response: Response) => {
+medicationRoutes.get("/:id", async (request: AuthenticatedRequest, response: Response) => {
     const id = parseMedicationId(request.params.id);
 
     if (!id) {
@@ -94,7 +100,7 @@ medicationRoutes.get("/:id", async (request: Request, response: Response) => {
     }
 
     try {
-        const medication = await getMedicationById(await getCurrentUserId(), id);
+        const medication = await getMedicationById(getAuthenticatedUserId(request), id);
         return response.json({ medication });
     } catch (error) {
         return sendError(response, error)
@@ -102,7 +108,7 @@ medicationRoutes.get("/:id", async (request: Request, response: Response) => {
     }
 });
 
-medicationRoutes.put("/:id", async (request: Request, response: Response) => {
+medicationRoutes.put("/:id", async (request: AuthenticatedRequest, response: Response) => {
     const id = parseMedicationId(request.params.id);
 
     if (!id) {
@@ -118,7 +124,7 @@ medicationRoutes.put("/:id", async (request: Request, response: Response) => {
     }
 
     try {
-        const medication = await updateMedication(await getCurrentUserId(), id, input);
+        const medication = await updateMedication(getAuthenticatedUserId(request), id, input);
         return response.json({ medication });
     } catch (error) {
         return sendError(response, error)
@@ -126,7 +132,7 @@ medicationRoutes.put("/:id", async (request: Request, response: Response) => {
     }
 });
 
-medicationRoutes.delete("/:id", async (request: Request, response: Response) => {
+medicationRoutes.delete("/:id", async (request: AuthenticatedRequest, response: Response) => {
     const id = parseMedicationId(request.params.id);
 
     if (!id) {
@@ -134,7 +140,7 @@ medicationRoutes.delete("/:id", async (request: Request, response: Response) => 
     }
 
     try {
-        await deleteMedication(await getCurrentUserId(), id);
+        await deleteMedication(getAuthenticatedUserId(request), id);
         return response.status(204).send();
     } catch (error) {
         return sendError(response, error)

@@ -1,9 +1,13 @@
-import { Router, type Request, type Response } from "express";
+import { Router, type Response } from "express";
+import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
 import { consultarBula } from "../services/bulaService.js";
+import { saveQuery } from "../services/queryHistoryService.js";
 
 const bulaRoutes = Router();
 
-bulaRoutes.post("/", async (request: Request, response: Response) => {
+bulaRoutes.use(requireAuthentication);
+
+bulaRoutes.post("/", async (request: AuthenticatedRequest, response: Response) => {
     const { question } = request.body as { question?: unknown };
 
     if (typeof question !== "string" || !question.trim()) {
@@ -12,14 +16,29 @@ bulaRoutes.post("/", async (request: Request, response: Response) => {
         });
     }
 
+    const normalizedQuestion = question.trim();
+    let resultado;
+
     try {
-        const resultado = await consultarBula(question);
-        return response.json(resultado);
+        resultado = await consultarBula(normalizedQuestion);
     } catch {
         return response.status(500).json({
             error: "Não foi possível consultar a bula no momento. Tente novamente mais tarde."
         });
     }
+
+    try {
+        await saveQuery(
+            request.auth!.userId,
+            normalizedQuestion,
+            resultado.answer,
+            resultado.sources
+        );
+    } catch (error) {
+        console.error("Não foi possível salvar o histórico da consulta.", error);
+    }
+
+    return response.json(resultado);
 });
 
 export default bulaRoutes;

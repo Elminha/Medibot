@@ -2,7 +2,9 @@ import "dotenv/config";
 import express from "express";
 import path from "node:path";
 import bulaRoutes from "./routes/bulaRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
 import medicationRoutes from "./routes/medicationRoutes.js";
+import queryHistoryRoutes from "./routes/queryHistoryRoutes.js";
 import reminderRoutes from "./routes/reminderRoutes.js";
 
 const app = express();
@@ -16,8 +18,10 @@ app.get("/health", (_request, response) => {
 });
 
 app.use("/api/bula", bulaRoutes);
+app.use("/api/auth", authRoutes);
 app.use("/api/medications", medicationRoutes);
 app.use("/api/reminders", reminderRoutes);
+app.use("/api/queries", queryHistoryRoutes);
 
 if (!process.env.VERCEL) {
     app.listen(port, () => {

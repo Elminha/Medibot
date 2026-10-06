@@ -1,5 +1,5 @@
-import { Router, type Request, type Response } from "express";
-import { getCurrentUserId } from "../services/developmentUserService.js";
+import { Router, type Response } from "express";
+import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
 import { MedicationNotFoundError } from "../services/medicationService.js";
 import {
     createReminder,
@@ -15,6 +15,12 @@ import {
 } from "../services/reminderService.js";
 
 const reminderRoutes = Router();
+
+reminderRoutes.use(requireAuthentication);
+
+function getAuthenticatedUserId(request: AuthenticatedRequest): number {
+    return request.auth!.userId;
+}
 
 function parsePositiveInteger(value: unknown): number | undefined {
     if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
@@ -114,7 +120,7 @@ function invalidReminderResponse(response: Response): Response {
     });
 }
 
-reminderRoutes.post("/", async (request: Request, response: Response) => {
+reminderRoutes.post("/", async (request: AuthenticatedRequest, response: Response) => {
     const input = validateReminderInput(request.body);
 
     if (!input) {
@@ -122,7 +128,7 @@ reminderRoutes.post("/", async (request: Request, response: Response) => {
     }
 
     try {
-        const reminder = await createReminder(await getCurrentUserId(), input);
+        const reminder = await createReminder(getAuthenticatedUserId(request), input);
         return response.status(201).json({ reminder });
     } catch (error) {
         return sendError(response, error)
@@ -130,16 +136,16 @@ reminderRoutes.post("/", async (request: Request, response: Response) => {
     }
 });
 
-reminderRoutes.get("/", async (_request: Request, response: Response) => {
+reminderRoutes.get("/", async (request: AuthenticatedRequest, response: Response) => {
     try {
-        const reminders = await listReminders(await getCurrentUserId());
+        const reminders = await listReminders(getAuthenticatedUserId(request));
         return response.json({ reminders });
     } catch {
         return response.status(500).json({ error: "N\u00e3o foi poss\u00edvel listar os lembretes." });
     }
 });
 
-reminderRoutes.get("/:id", async (request: Request, response: Response) => {
+reminderRoutes.get("/:id", async (request: AuthenticatedRequest, response: Response) => {
     const id = parseReminderId(request.params.id);
 
     if (!id) {
@@ -147,7 +153,7 @@ reminderRoutes.get("/:id", async (request: Request, response: Response) => {
     }
 
     try {
-        const reminder = await getReminderById(await getCurrentUserId(), id);
+        const reminder = await getReminderById(getAuthenticatedUserId(request), id);
         return response.json({ reminder });
     } catch (error) {
         return sendError(response, error)
@@ -155,7 +161,7 @@ reminderRoutes.get("/:id", async (request: Request, response: Response) => {
     }
 });
 
-reminderRoutes.put("/:id", async (request: Request, response: Response) => {
+reminderRoutes.put("/:id", async (request: AuthenticatedRequest, response: Response) => {
     const id = parseReminderId(request.params.id);
 
     if (!id) {
@@ -169,7 +175,7 @@ reminderRoutes.put("/:id", async (request: Request, response: Response) => {
     }
 
     try {
-        const reminder = await updateReminder(await getCurrentUserId(), id, input);
+        const reminder = await updateReminder(getAuthenticatedUserId(request), id, input);
         return response.json({ reminder });
     } catch (error) {
         return sendError(response, error)
@@ -177,7 +183,7 @@ reminderRoutes.put("/:id", async (request: Request, response: Response) => {
     }
 });
 
-reminderRoutes.delete("/:id", async (request: Request, response: Response) => {
+reminderRoutes.delete("/:id", async (request: AuthenticatedRequest, response: Response) => {
     const id = parseReminderId(request.params.id);
 
     if (!id) {
@@ -185,7 +191,7 @@ reminderRoutes.delete("/:id", async (request: Request, response: Response) => {
     }
 
     try {
-        await deleteReminder(await getCurrentUserId(), id);
+        await deleteReminder(getAuthenticatedUserId(request), id);
         return response.status(204).send();
     } catch (error) {
         return sendError(response, error)
