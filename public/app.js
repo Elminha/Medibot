@@ -19,8 +19,65 @@ const registerForm = document.querySelector("#register-form");
 const loginFeedback = document.querySelector("#login-feedback");
 const registerFeedback = document.querySelector("#register-feedback");
 const loggedUser = document.querySelector("#logged-user");
+const userAvatar = document.querySelector(".user-avatar");
 const historyList = document.querySelector("#history-list");
 const historyDetail = document.querySelector("#history-detail");
+
+const themeStorageKey = "medibot_theme";
+const themeToggleButton = document.querySelector("#theme-toggle");
+
+function getPreferredTheme() {
+    try {
+        const stored = window.localStorage.getItem(themeStorageKey);
+        if (stored === "light" || stored === "dark") return stored;
+    } catch {
+        // ignore storage access errors
+    }
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    themeToggleButton?.setAttribute("aria-pressed", String(theme === "dark"));
+}
+
+function setTheme(theme) {
+    applyTheme(theme);
+    try {
+        window.localStorage.setItem(themeStorageKey, theme);
+    } catch {
+        // ignore storage access errors
+    }
+}
+
+applyTheme(getPreferredTheme());
+
+themeToggleButton?.addEventListener("click", () => {
+    const current = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+    setTheme(current === "dark" ? "light" : "dark");
+});
+
+const emptyStateIcons = {
+    medication: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg>',
+    reminder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
+    history: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>'
+};
+
+function buildEmptyState(iconKey, text, actionLabel, onAction) {
+    const container = document.createElement("div");
+    container.className = "medication-state";
+    const icon = document.createElement("span");
+    icon.innerHTML = emptyStateIcons[iconKey] || "";
+    const message = document.createElement("span");
+    message.className = "empty-state-title";
+    message.textContent = text;
+    container.append(icon, message);
+    if (actionLabel && onAction) {
+        const button = medicationButton(actionLabel, "secondary-button", onAction);
+        container.append(button);
+    }
+    return container;
+}
 
 let isWaiting = false;
 let notificationScheduler = null;
@@ -91,6 +148,7 @@ function showApplication(user) {
     authView.hidden = true;
     authenticatedApp.hidden = false;
     loggedUser.textContent = user.name ? `Olá, ${user.name}` : "Usuário autenticado";
+    if (userAvatar) userAvatar.textContent = user.name?.trim()?.charAt(0)?.toUpperCase() || "M";
     currentAuthUserId = user.id;
     setView("chat");
     const reminderLoad = loadReminders();
@@ -329,10 +387,13 @@ function renderMedicationCard(medication) {
     card.append(header);
 
     if (medication.dosage) {
-        const dosage = document.createElement("p");
-        dosage.className = "medication-details";
-        dosage.textContent = `Dosagem: ${medication.dosage}`;
-        card.append(dosage);
+        const meta = document.createElement("div");
+        meta.className = "medication-meta";
+        const dosePill = document.createElement("span");
+        dosePill.className = "medication-dose-pill";
+        dosePill.textContent = medication.dosage;
+        meta.append(dosePill);
+        card.append(meta);
     }
 
     if (medication.instructions) {
@@ -440,10 +501,12 @@ function renderMedications(medications) {
     populateReminderMedicationOptions();
     medicationList.replaceChildren();
     if (!medications.length) {
-        const empty = document.createElement("p");
-        empty.className = "medication-state";
-        empty.textContent = "Você ainda não cadastrou medicamentos.";
-        medicationList.append(empty);
+        medicationList.append(buildEmptyState(
+            "medication",
+            "Você ainda não cadastrou medicamentos.",
+            "Adicionar medicamento",
+            () => medicationNameInput.focus()
+        ));
         return;
     }
     medications.forEach((medication) => medicationList.append(renderMedicationCard(medication)));
@@ -584,9 +647,15 @@ function renderReminderCard(reminder) {
     status.textContent = reminder.active ? "Ativo" : "Inativo";
     header.append(name, status);
 
-    const details = document.createElement("p");
-    details.className = "reminder-details";
-    details.textContent = `Horário: ${reminder.time} · Frequência: ${frequencyLabel(reminder.frequency)}`;
+    const meta = document.createElement("div");
+    meta.className = "reminder-meta";
+    const timeBadge = document.createElement("span");
+    timeBadge.className = "reminder-time-badge";
+    timeBadge.textContent = reminder.time;
+    const frequency = document.createElement("span");
+    frequency.className = "reminder-frequency-label";
+    frequency.textContent = frequencyLabel(reminder.frequency);
+    meta.append(timeBadge, frequency);
 
     const actions = document.createElement("div");
     actions.className = "reminder-actions";
@@ -595,7 +664,7 @@ function renderReminderCard(reminder) {
         reminderButton(reminder.active ? "Desativar" : "Ativar", "secondary-button", () => setReminderActive(reminder, !reminder.active)),
         reminderButton("Excluir", "danger-button", () => deleteReminder(reminder.id, reminder.medicationName))
     );
-    card.append(header, details, actions);
+    card.append(header, meta, actions);
     return card;
 }
 
@@ -679,9 +748,17 @@ function showReminderEditor(card, reminder) {
 function renderReminders(reminders) {
     reminderList.replaceChildren();
     if (!reminders.length) {
-        const empty = document.createElement("p");
+        const empty = buildEmptyState(
+            "reminder",
+            currentMedications.length
+                ? "Você ainda não cadastrou lembretes."
+                : "Cadastre um medicamento para criar lembretes.",
+            currentMedications.length ? "Adicionar lembrete" : "Ir para Medicamentos",
+            currentMedications.length
+                ? () => reminderMedicationInput.focus()
+                : () => setView("medications")
+        );
         empty.className = "reminder-state";
-        empty.textContent = "Você ainda não cadastrou lembretes.";
         reminderList.append(empty);
         return;
     }
@@ -971,10 +1048,17 @@ async function loadQueryHistory() {
         if (!data || !Array.isArray(data.queries)) throw new Error("Resposta inesperada ao carregar o histórico.");
 
         if (!data.queries.length) {
-            const message = document.createElement("p");
-            message.className = "history-state";
-            message.textContent = "Suas consultas aparecerão aqui.";
-            historyList.append(message);
+            const empty = buildEmptyState(
+                "history",
+                "Suas consultas aparecerão aqui.",
+                "Fazer uma pergunta",
+                () => {
+                    setView("chat");
+                    questionInput.focus();
+                }
+            );
+            empty.className = "history-state";
+            historyList.append(empty);
             return;
         }
 

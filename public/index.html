@@ -2,6 +2,19 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8" />
+    <script>
+        (function () {
+            try {
+                var stored = window.localStorage.getItem("medibot_theme");
+                var theme = stored === "light" || stored === "dark"
+                    ? stored
+                    : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+                document.documentElement.setAttribute("data-theme", theme);
+            } catch (error) {
+                document.documentElement.setAttribute("data-theme", "light");
+            }
+        })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="MediBot, assistente de apoio à compreensão de bulas." />
     <title>MediBot | Consulta de bulas</title>
@@ -42,19 +55,52 @@
 
     <main class="app-shell" id="authenticated-app" hidden>
         <aside class="sidebar" id="sidebar">
-            <div class="sidebar-brand"><div class="brand-mark" aria-hidden="true">+</div><span>MediBot</span><button type="button" class="icon-button sidebar-toggle" id="sidebar-toggle" aria-label="Recolher menu">☰</button></div>
-            <button type="button" class="new-chat-button" id="new-chat-button"><span aria-hidden="true">＋</span><span>Nova conversa</span></button>
+            <div class="sidebar-brand">
+                <div class="brand-mark" aria-hidden="true">+</div><span>MediBot</span>
+                <button type="button" class="icon-button sidebar-toggle" id="sidebar-toggle" aria-label="Recolher menu">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+                </button>
+            </div>
+            <button type="button" class="new-chat-button" id="new-chat-button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span>Nova conversa</span>
+            </button>
             <nav class="sidebar-nav" aria-label="Navegação principal">
-                <button type="button" class="nav-button active" data-view="chat"><span aria-hidden="true">◌</span><span>Conversar</span></button>
-                <button type="button" class="nav-button" data-view="history"><span aria-hidden="true">◷</span><span>Histórico</span></button>
-                <button type="button" class="nav-button" data-view="medications"><span aria-hidden="true">＋</span><span>Medicamentos</span></button>
-                <button type="button" class="nav-button" data-view="reminders"><span aria-hidden="true">◷</span><span>Lembretes</span></button>
+                <button type="button" class="nav-button active" data-view="chat">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
+                    <span>Conversar</span>
+                </button>
+                <button type="button" class="nav-button" data-view="history">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+                    <span>Histórico</span>
+                </button>
+                <button type="button" class="nav-button" data-view="medications">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg>
+                    <span>Medicamentos</span>
+                </button>
+                <button type="button" class="nav-button" data-view="reminders">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                    <span>Lembretes</span>
+                </button>
             </nav>
-            <div class="sidebar-account"><span class="user-avatar" aria-hidden="true">M</span><span id="logged-user" aria-live="polite"></span><button type="button" class="icon-button" id="logout-button" aria-label="Sair da conta" title="Sair">↪</button></div>
+            <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="false">
+                <span class="theme-toggle-icon icon-sun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></span>
+                <span class="theme-toggle-icon icon-moon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span>
+                <span class="theme-toggle-label label-dark">Tema escuro</span>
+                <span class="theme-toggle-label label-light">Tema claro</span>
+            </button>
+            <div class="sidebar-account">
+                <span class="user-avatar" aria-hidden="true">M</span><span id="logged-user" aria-live="polite"></span>
+                <button type="button" class="icon-button" id="logout-button" aria-label="Sair da conta" title="Sair">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+                </button>
+            </div>
         </aside>
         <div class="app-main">
         <header class="app-header">
-            <button type="button" class="icon-button mobile-menu" id="mobile-menu" aria-label="Abrir menu">☰</button>
+            <button type="button" class="icon-button mobile-menu" id="mobile-menu" aria-label="Abrir menu">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+            </button>
             <div><h1>MediBot</h1><p>Assistente de apoio à compreensão de bulas</p></div>
         </header>
 
@@ -76,7 +122,9 @@
             <form class="composer" id="chat-form" novalidate>
                 <label class="sr-only" for="question">Sua pergunta sobre uma bula</label>
                 <textarea id="question" name="question" rows="1" maxlength="2000" placeholder="Digite sua pergunta sobre um medicamento..." required></textarea>
-                <button id="send-button" type="submit" aria-label="Enviar mensagem" title="Enviar">↑</button>
+                <button id="send-button" type="submit" aria-label="Enviar mensagem" title="Enviar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+                </button>
             </form>
             <p class="form-feedback" id="form-feedback" role="alert"></p>
         </section>
