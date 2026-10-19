@@ -8,6 +8,7 @@
         "dev": "tsx watch src/server.ts",
         "start": "node dist/server.js",
         "build": "tsc",
+        "test": "node --test",
         "create:vector-store": "tsx src/createVectorStore.ts",
         "create:file-search-store": "tsx src/createVectorStore.ts",
         "upload:bula": "tsx src/uploadBula.ts",

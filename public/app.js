@@ -1,3 +1,8 @@
+import {
+    getNotificationAvailability,
+    startReminderSchedulerIfAllowed
+} from "./reminderNotifications.js";
+
 const form = document.querySelector("#chat-form");
 const questionInput = document.querySelector("#question");
 const messages = document.querySelector("#messages");
@@ -18,6 +23,9 @@ const historyList = document.querySelector("#history-list");
 const historyDetail = document.querySelector("#history-detail");
 
 let isWaiting = false;
+let notificationScheduler = null;
+let reminderRefreshTimer = null;
+let currentAuthUserId = null;
 
 function getAuthToken() {
     return window.localStorage.getItem(authTokenStorageKey)?.trim() || "";
@@ -57,7 +65,10 @@ function showRegister() {
 }
 
 function clearApplicationData() {
+    stopReminderNotifications();
+    currentAuthUserId = null;
     messages.replaceChildren();
+    document.querySelector(".suggestions").hidden = false;
     addMessage("Olá! Eu sou o MediBot. Posso ajudar você a compreender informações presentes nas bulas dos medicamentos disponíveis no sistema. Faça uma pergunta sobre um medicamento.", "bot");
     medicationList.replaceChildren();
     reminderList.replaceChildren();
@@ -80,7 +91,25 @@ function showApplication(user) {
     authView.hidden = true;
     authenticatedApp.hidden = false;
     loggedUser.textContent = user.name ? `Olá, ${user.name}` : "Usuário autenticado";
-    Promise.all([loadMedications(), loadReminders(), loadQueryHistory()]);
+    currentAuthUserId = user.id;
+    setView("chat");
+    const reminderLoad = loadReminders();
+    if (getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext }) === "enabled") {
+        setNotificationState("pending", "Permissão concedida. Carregando seus lembretes para retomar as notificações…");
+    } else {
+        updateNotificationPermissionState();
+    }
+    Promise.all([loadMedications(), reminderLoad, loadQueryHistory()]).then(([, reminders]) => {
+        if (Array.isArray(reminders)) {
+            initializeReminderScheduler(reminders);
+        } else if (getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext }) === "enabled") {
+            setNotificationState("disabled", "Não foi possível carregar seus lembretes. Verifique a conexão e tente ativar novamente.");
+        }
+    });
+    window.clearInterval(reminderRefreshTimer);
+    reminderRefreshTimer = window.setInterval(() => {
+        refreshReminderNotifications();
+    }, 60_000);
 }
 
 async function readError(response, fallback) {
@@ -156,6 +185,7 @@ async function sendQuestion(question) {
     }
 
     addMessage(trimmedQuestion, "user");
+    document.querySelector(".suggestions").hidden = true;
     questionInput.value = "";
     setWaiting(true);
     addLoading();
@@ -207,6 +237,13 @@ async function sendQuestion(question) {
 form.addEventListener("submit", (event) => {
     event.preventDefault();
     sendQuestion(questionInput.value);
+});
+
+questionInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+    }
 });
 
 suggestionButtons.forEach((button) => {
@@ -664,17 +701,160 @@ async function loadReminders() {
         const data = await response.json();
         if (!data || !Array.isArray(data.reminders)) throw new Error("Resposta inesperada ao carregar lembretes.");
         renderReminders(data.reminders);
+        notificationScheduler?.setReminders(data.reminders);
+        document.querySelector("#frequency-gap").hidden = !data.reminders.some((reminder) => reminder.active && ["weekly", "custom"].includes(reminder.frequency));
+        return data.reminders;
     } catch (error) {
         reminderList.replaceChildren();
+        notificationScheduler?.setReminders([]);
         const message = document.createElement("p");
         message.className = "reminder-state feedback-error";
         message.textContent = error instanceof Error ? error.message : "Não foi possível carregar os lembretes.";
         reminderList.append(message);
         setReminderFeedback("Verifique sua conexão e tente novamente.", "error");
+        return false;
     } finally {
         setReminderLoading(false);
     }
 }
+
+const notificationButton = document.querySelector("#notification-toggle");
+const notificationStatus = document.querySelector("#notification-status");
+
+function stopReminderNotifications() {
+    notificationScheduler?.stop();
+    notificationScheduler = null;
+    window.clearInterval(reminderRefreshTimer);
+    reminderRefreshTimer = null;
+}
+
+function stopReminderScheduler() {
+    notificationScheduler?.stop();
+    notificationScheduler = null;
+}
+
+function setNotificationState(state, message) {
+    notificationStatus.textContent = message;
+    notificationStatus.dataset.state = state;
+    notificationButton.disabled = state === "pending" || state === "enabled";
+    notificationButton.textContent = state === "enabled" ? "Notificações ativadas" : state === "pending" ? "Aguarde…" : "Ativar notificações";
+}
+
+async function enableReminderNotifications() {
+    const notification = window.Notification;
+    const availability = getNotificationAvailability({ notification, isSecureContext: window.isSecureContext });
+    if (availability === "blocked") {
+        setNotificationState("blocked", "Notificações bloqueadas ou indisponíveis. Verifique as permissões do navegador e use uma conexão segura.");
+        return;
+    }
+
+    setNotificationState("pending", "Aguardando permissão para mostrar notificações…");
+    let permission;
+    try {
+        permission = notification.permission === "granted" ? "granted" : await notification.requestPermission();
+    } catch {
+        setNotificationState("blocked", "Não foi possível solicitar permissão para notificações neste navegador.");
+        return;
+    }
+    if (permission !== "granted") {
+        setNotificationState("blocked", permission === "denied"
+            ? "Permissão negada. Altere a permissão de notificações nas configurações do navegador para ativar."
+            : "Permissão não concedida. As notificações continuam desativadas.");
+        return;
+    }
+
+    try {
+        const reminders = await loadReminders();
+        if (!Array.isArray(reminders)) throw new Error("reminders-load-failed");
+        initializeReminderScheduler(reminders);
+    } catch {
+        notificationScheduler?.stop();
+        notificationScheduler = null;
+        setNotificationState("disabled", "Não foi possível carregar seus lembretes. Verifique a conexão e tente ativar novamente.");
+    }
+}
+
+function initializeReminderScheduler(reminders) {
+    const availability = getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext });
+    if (availability !== "enabled") {
+        stopReminderScheduler();
+        updateNotificationPermissionState();
+        return null;
+    }
+    if (!Number.isSafeInteger(currentAuthUserId) || currentAuthUserId <= 0) return null;
+    notificationScheduler = startReminderSchedulerIfAllowed({
+        scheduler: notificationScheduler,
+        userId: currentAuthUserId,
+        notification: window.Notification,
+        isSecureContext: window.isSecureContext,
+        storage: window.localStorage,
+        reminders,
+        onNavigate: () => setView("reminders")
+    });
+    if (notificationScheduler) {
+        setNotificationState("enabled", "Notificações ativadas. O navegador precisa manter esta página ativa para verificar os horários.");
+    }
+    return notificationScheduler;
+}
+
+async function refreshReminderNotifications() {
+    const availability = getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext });
+    if (availability === "blocked") {
+        stopReminderScheduler();
+        updateNotificationPermissionState();
+        return;
+    }
+    if (availability !== "enabled") {
+        stopReminderScheduler();
+        updateNotificationPermissionState();
+        return;
+    }
+    const reminders = await loadReminders();
+    if (!Array.isArray(reminders)) return;
+    if (!notificationScheduler) initializeReminderScheduler(reminders);
+    else if (document.visibilityState === "visible") notificationScheduler.handleVisibilityChange(true);
+}
+
+function updateNotificationPermissionState() {
+    const availability = getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext });
+    if (availability === "blocked") {
+        setNotificationState("blocked", !window.isSecureContext
+            ? "Notificações exigem uma conexão segura (HTTPS ou localhost)."
+            : window.Notification?.permission === "denied"
+                ? "Permissão negada. Altere a permissão nas configurações do navegador."
+                : "Este navegador não oferece notificações ou a permissão está bloqueada.");
+    } else if (availability === "enabled") {
+        setNotificationState("disabled", "A permissão foi concedida. Entre na conta para retomar as notificações.");
+    } else {
+        setNotificationState("disabled", "Notificações desativadas. Clique para solicitar permissão e ativá-las neste navegador.");
+    }
+}
+
+notificationButton.addEventListener("click", () => {
+    if (notificationScheduler || notificationButton.disabled) return;
+    enableReminderNotifications();
+});
+
+updateNotificationPermissionState();
+
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") {
+        notificationScheduler?.handleVisibilityChange(false);
+        return;
+    }
+    if (!Number.isSafeInteger(currentAuthUserId)) return;
+    const availability = getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext });
+    if (availability !== "enabled") {
+        stopReminderScheduler();
+        updateNotificationPermissionState();
+        return;
+    }
+    loadReminders().then((reminders) => {
+        if (!Array.isArray(reminders)) return;
+        initializeReminderScheduler(reminders);
+        notificationScheduler?.handleVisibilityChange(true);
+    });
+});
 
 async function setReminderActive(reminder, active) {
     setReminderFeedback("");
@@ -829,6 +1009,35 @@ async function loadQueryHistory() {
         historyList.setAttribute("aria-busy", "false");
     }
 }
+
+function setView(view) {
+    document.querySelectorAll("[data-view]").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+    document.querySelector(".chat-panel").hidden = view !== "chat";
+    document.querySelector(".history-panel").hidden = view !== "history";
+    document.querySelector(".medications-panel").hidden = view !== "medications";
+    document.querySelector(".reminders-panel").hidden = view !== "reminders";
+    document.querySelector(".safety-note").hidden = view !== "chat";
+    document.querySelector("#sidebar").classList.remove("mobile-open");
+}
+
+document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
+document.querySelector("#new-chat-button").addEventListener("click", () => {
+    messages.replaceChildren();
+    document.querySelector(".suggestions").hidden = false;
+    feedback.textContent = "";
+    addMessage("Olá! Eu sou o MediBot. Posso ajudar você a compreender informações presentes nas bulas dos medicamentos disponíveis no sistema. Faça uma pergunta sobre um medicamento.", "bot");
+    setView("chat");
+    questionInput.focus();
+});
+const sidebar = document.querySelector("#sidebar");
+const sidebarToggle = document.querySelector("#sidebar-toggle");
+sidebarToggle.setAttribute("aria-expanded", "true");
+sidebarToggle.addEventListener("click", () => {
+    const collapsed = sidebar.classList.toggle("collapsed");
+    sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
+    sidebarToggle.setAttribute("aria-label", collapsed ? "Expandir menu" : "Recolher menu");
+});
+document.querySelector("#mobile-menu").addEventListener("click", () => document.querySelector("#sidebar").classList.toggle("mobile-open"));
 
 document.querySelector("#show-register").addEventListener("click", showRegister);
 document.querySelector("#show-login").addEventListener("click", () => showLogin());

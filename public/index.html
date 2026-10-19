@@ -41,16 +41,21 @@
     </main>
 
     <main class="app-shell" id="authenticated-app" hidden>
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-brand"><div class="brand-mark" aria-hidden="true">+</div><span>MediBot</span><button type="button" class="icon-button sidebar-toggle" id="sidebar-toggle" aria-label="Recolher menu">☰</button></div>
+            <button type="button" class="new-chat-button" id="new-chat-button"><span aria-hidden="true">＋</span><span>Nova conversa</span></button>
+            <nav class="sidebar-nav" aria-label="Navegação principal">
+                <button type="button" class="nav-button active" data-view="chat"><span aria-hidden="true">◌</span><span>Conversar</span></button>
+                <button type="button" class="nav-button" data-view="history"><span aria-hidden="true">◷</span><span>Histórico</span></button>
+                <button type="button" class="nav-button" data-view="medications"><span aria-hidden="true">＋</span><span>Medicamentos</span></button>
+                <button type="button" class="nav-button" data-view="reminders"><span aria-hidden="true">◷</span><span>Lembretes</span></button>
+            </nav>
+            <div class="sidebar-account"><span class="user-avatar" aria-hidden="true">M</span><span id="logged-user" aria-live="polite"></span><button type="button" class="icon-button" id="logout-button" aria-label="Sair da conta" title="Sair">↪</button></div>
+        </aside>
+        <div class="app-main">
         <header class="app-header">
-            <div class="brand-mark" aria-hidden="true">+</div>
-            <div>
-                <h1>MediBot</h1>
-                <p>Assistente de apoio à compreensão de bulas</p>
-            </div>
-            <div class="user-menu">
-                <span id="logged-user" aria-live="polite"></span>
-                <button type="button" class="secondary-button" id="logout-button">Sair</button>
-            </div>
+            <button type="button" class="icon-button mobile-menu" id="mobile-menu" aria-label="Abrir menu">☰</button>
+            <div><h1>MediBot</h1><p>Assistente de apoio à compreensão de bulas</p></div>
         </header>
 
         <section class="chat-panel" aria-label="Conversa com o MediBot">
@@ -62,7 +67,7 @@
             </div>
 
             <div class="suggestions" aria-label="Perguntas de exemplo">
-                <span>Experimente perguntar:</span>
+                <span class="suggestion-heading">Por onde começamos?</span>
                 <button type="button" data-question="Quais são as contraindicações da dipirona?">Contraindicações da dipirona</button>
                 <button type="button" data-question="Quais são os efeitos adversos da dipirona?">Efeitos adversos da dipirona</button>
                 <button type="button" data-question="Quais cuidados são descritos na bula da dipirona?">Cuidados com a dipirona</button>
@@ -71,7 +76,7 @@
             <form class="composer" id="chat-form" novalidate>
                 <label class="sr-only" for="question">Sua pergunta sobre uma bula</label>
                 <textarea id="question" name="question" rows="1" maxlength="2000" placeholder="Digite sua pergunta sobre um medicamento..." required></textarea>
-                <button id="send-button" type="submit">Enviar</button>
+                <button id="send-button" type="submit" aria-label="Enviar mensagem" title="Enviar">↑</button>
             </form>
             <p class="form-feedback" id="form-feedback" role="alert"></p>
         </section>
@@ -131,6 +136,16 @@
                 </div>
             </div>
 
+            <section class="notification-settings" aria-labelledby="notifications-title">
+                <div class="notification-copy">
+                    <h3 id="notifications-title">Notificações de lembretes</h3>
+                    <p id="notification-status" role="status" aria-live="polite">Notificações desativadas. Ative para receber avisos neste navegador.</p>
+                    <p class="notification-limit">O MediBot precisa permanecer aberto e ativo para verificar os horários. O navegador pode atrasar verificações ao suspender a aba, e não envia notificações com ele fechado.</p>
+                </div>
+                <button type="button" class="primary-button" id="notification-toggle">Ativar notificações</button>
+            </section>
+            <p class="frequency-gap" id="frequency-gap" hidden>Os lembretes semanais e personalizados não serão notificados: ainda não há dias programados definidos para essas frequências.</p>
+
             <form class="reminder-form" id="reminder-form" novalidate>
                 <div class="reminder-fields">
                     <label>
@@ -167,7 +182,8 @@
         </section>
 
         <p class="safety-note">Informação educativa baseada nas bulas disponíveis no sistema. O MediBot não realiza diagnóstico, não prescreve medicamentos e não substitui a orientação de um profissional de saúde.</p>
+        </div>
     </main>
-    <script src="/app.js" defer></script>
+    <script src="/app.js" type="module"></script>
 </body>
 </html>
