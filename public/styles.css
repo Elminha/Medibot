@@ -153,7 +153,9 @@ textarea { resize: vertical; }
 .auth-description { margin: 0; color: var(--text-muted); line-height: 1.55; }
 .auth-form { display: grid; gap: 16px; margin-top: 26px; }
 .auth-form label { display: grid; gap: 6px; color: var(--text); font-size: .86rem; font-weight: 650; }
+.auth-form label span { color: var(--text-muted); font-weight: 400; }
 .auth-form .primary-button { min-height: 46px; margin-top: 6px; width: 100%; }
+.auth-hint { margin: -6px 0 0; color: var(--text-muted); font-size: .8rem; }
 .auth-feedback { min-height: 1.3em; margin: 14px 0 0; color: var(--danger); font-size: .86rem; }
 .auth-feedback.success { color: var(--primary); }
 .auth-switch { margin: 18px 0 0; color: var(--text-muted); font-size: .88rem; text-align: center; }

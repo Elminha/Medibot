@@ -31,7 +31,7 @@
                 <h1 id="auth-title">Bem-vindo ao MediBot</h1>
                 <p class="auth-description">Entre para consultar bulas, organizar seus medicamentos e acompanhar suas conversas.</p>
                 <form id="login-form" class="auth-form" novalidate>
-                    <label>E-mail<input id="login-email" type="email" autocomplete="email" required /></label>
+                    <label>E-mail ou telefone<input id="login-identifier" type="text" autocomplete="username" required /></label>
                     <label>Senha<input id="login-password" type="password" autocomplete="current-password" required /></label>
                     <button class="primary-button" type="submit">Entrar</button>
                 </form>
@@ -43,7 +43,9 @@
                 <p class="auth-description">Use seus dados para começar a usar o MediBot.</p>
                 <form id="register-form" class="auth-form" novalidate>
                     <label>Nome<input id="register-name" type="text" autocomplete="name" required /></label>
-                    <label>E-mail<input id="register-email" type="email" autocomplete="email" required /></label>
+                    <label>E-mail <span>(opcional)</span><input id="register-email" type="email" autocomplete="email" /></label>
+                    <label>Telefone <span>(opcional)</span><input id="register-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(61) 99999-9999" /></label>
+                    <p class="auth-hint">Informe pelo menos um: e-mail ou telefone.</p>
                     <label>Senha<input id="register-password" type="password" autocomplete="new-password" minlength="8" required /></label>
                     <button class="primary-button" type="submit">Criar conta</button>
                 </form>

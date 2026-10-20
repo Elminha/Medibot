@@ -1,9 +1,9 @@
 import { Router, type Request, type Response } from "express";
 import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
 import {
+    AccountAlreadyExistsError,
     AuthConfigurationError,
     AuthUserNotFoundError,
-    EmailAlreadyRegisteredError,
     InvalidCredentialsError,
     loginUser,
     registerUser,
@@ -21,7 +21,10 @@ function parseRegisterInput(body: unknown): RegisterInput | undefined {
     }
 
     const { name, email, password, phone, timezone } = body as Record<string, unknown>;
-    if (typeof name !== "string" || typeof email !== "string" || typeof password !== "string") {
+    if (typeof name !== "string" || typeof password !== "string") {
+        return undefined;
+    }
+    if (email !== undefined && typeof email !== "string") {
         return undefined;
     }
     if (phone !== undefined && typeof phone !== "string") {
@@ -39,8 +42,8 @@ function parseLoginInput(body: unknown): LoginInput | undefined {
         return undefined;
     }
 
-    const { email, password } = body as Record<string, unknown>;
-    return typeof email === "string" && typeof password === "string" ? { email, password } : undefined;
+    const { identifier, password } = body as Record<string, unknown>;
+    return typeof identifier === "string" && typeof password === "string" ? { identifier, password } : undefined;
 }
 
 function sendAuthError(response: Response, error: unknown): Response | undefined {
@@ -50,11 +53,11 @@ function sendAuthError(response: Response, error: unknown): Response | undefined
     if (error instanceof ValidationError) {
         return response.status(400).json({ error: error.message });
     }
-    if (error instanceof EmailAlreadyRegisteredError) {
+    if (error instanceof AccountAlreadyExistsError) {
         return response.status(409).json({ error: error.message });
     }
     if (error instanceof InvalidCredentialsError) {
-        return response.status(401).json({ error: "E-mail ou senha inválidos." });
+        return response.status(401).json({ error: error.message });
     }
     if (error instanceof AuthUserNotFoundError) {
         return response.status(401).json({ error: "Token de autenticação inválido." });
@@ -65,7 +68,7 @@ function sendAuthError(response: Response, error: unknown): Response | undefined
 authRoutes.post("/register", async (request: Request, response: Response) => {
     const input = parseRegisterInput(request.body);
     if (!input) {
-        return response.status(400).json({ error: "Informe name, email e password válidos." });
+        return response.status(400).json({ error: "Informe nome e senha válidos, com e-mail e/ou telefone." });
     }
 
     try {
@@ -80,7 +83,7 @@ authRoutes.post("/register", async (request: Request, response: Response) => {
 authRoutes.post("/login", async (request: Request, response: Response) => {
     const input = parseLoginInput(request.body);
     if (!input) {
-        return response.status(400).json({ error: "Informe email e password válidos." });
+        return response.status(400).json({ error: "Informe um e-mail ou telefone e uma senha válidos." });
     }
 
     try {

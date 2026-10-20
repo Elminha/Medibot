@@ -1143,14 +1143,14 @@ document.querySelector("#show-login").addEventListener("click", () => showLogin(
 
 loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const email = document.querySelector("#login-email").value.trim();
+    const identifier = document.querySelector("#login-identifier").value.trim();
     const password = document.querySelector("#login-password").value;
     loginFeedback.textContent = "";
     try {
         const response = await fetch("/api/auth/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, password })
+            body: JSON.stringify({ identifier, password })
         });
         if (!response.ok) throw new Error(await readError(response, "Não foi possível entrar."));
         const data = await response.json();
@@ -1167,17 +1167,24 @@ registerForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const name = document.querySelector("#register-name").value.trim();
     const email = document.querySelector("#register-email").value.trim();
+    const phone = document.querySelector("#register-phone").value.trim();
     const password = document.querySelector("#register-password").value;
     registerFeedback.textContent = "";
+
+    if (!email && !phone) {
+        registerFeedback.textContent = "Informe pelo menos um: e-mail ou telefone.";
+        return;
+    }
+
     try {
         const response = await fetch("/api/auth/register", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, email, password })
+            body: JSON.stringify({ name, email, phone, password })
         });
         if (!response.ok) throw new Error(await readError(response, "Não foi possível criar a conta."));
         registerForm.reset();
-        showLogin("Conta criada com sucesso. Agora entre com seu e-mail e senha.", true);
+        showLogin("Conta criada com sucesso. Agora entre com seu e-mail ou telefone e senha.", true);
     } catch (error) {
         registerFeedback.textContent = error instanceof Error ? error.message : "Não foi possível criar a conta.";
     }
