@@ -183,6 +183,15 @@ function scrollToLatest() {
     messages.scrollTop = messages.scrollHeight;
 }
 
+function renderMarkdown(container, text) {
+    if (typeof marked === "undefined" || typeof DOMPurify === "undefined") {
+        container.textContent = text;
+        return;
+    }
+    const html = marked.parse(text, { breaks: true });
+    container.innerHTML = DOMPurify.sanitize(html);
+}
+
 function addMessage(text, kind, sources = []) {
     const message = document.createElement("article");
     message.className = `message message-${kind}`;
@@ -192,11 +201,16 @@ function addMessage(text, kind, sources = []) {
         label.className = "message-label";
         label.textContent = "MediBot";
         message.append(label);
-    }
 
-    const content = document.createElement("p");
-    content.textContent = text;
-    message.append(content);
+        const content = document.createElement("div");
+        content.className = "markdown-content";
+        renderMarkdown(content, text);
+        message.append(content);
+    } else {
+        const content = document.createElement("p");
+        content.textContent = text;
+        message.append(content);
+    }
 
     if (sources.length > 0) {
         const sourceText = document.createElement("p");
@@ -1009,8 +1023,9 @@ function showHistoryDetail(query) {
     question.textContent = query.question;
     const answerTitle = document.createElement("h3");
     answerTitle.textContent = "Resposta do MediBot";
-    const answer = document.createElement("p");
-    answer.textContent = query.answer;
+    const answer = document.createElement("div");
+    answer.className = "markdown-content";
+    renderMarkdown(answer, query.answer);
     historyDetail.append(title, question, answerTitle, answer);
 
     const sources = Array.isArray(query.sources) ? query.sources.filter((source) => typeof source === "string" && source.trim()) : [];
