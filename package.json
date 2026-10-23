@@ -8,7 +8,7 @@
         "dev": "tsx watch src/server.ts",
         "start": "node dist/server.js",
         "build": "tsc",
-        "test": "node --test",
+        "test": "tsx --test",
         "create:vector-store": "tsx src/createVectorStore.ts",
         "create:file-search-store": "tsx src/createVectorStore.ts",
         "upload:bula": "tsx src/uploadBula.ts",
@@ -23,6 +23,7 @@
         "bcrypt": "^6.0.0",
         "dotenv": "^16.4.7",
         "express": "^5.2.1",
+        "grammy": "^1.46.0",
         "jsonwebtoken": "^9.0.3",
         "openai": "^7.8.0",
         "pg": "^8.16.3"

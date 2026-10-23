@@ -1,0 +1,66 @@
+import { Router, type Request, type Response } from "express";
+import { webhookCallback } from "grammy";
+import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
+import { getTelegramBot } from "../services/telegramBot.js";
+import {
+    buildTelegramDeepLink,
+    createLinkCode,
+    TelegramConfigurationError,
+    unlinkUser
+} from "../services/telegramLinkService.js";
+
+const telegramRoutes = Router();
+
+function isValidWebhookRequest(request: Request): boolean {
+    const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
+    const providedSecret = request.header("x-telegram-bot-api-secret-token");
+    return Boolean(expectedSecret) && providedSecret === expectedSecret;
+}
+
+telegramRoutes.post("/webhook", async (request: Request, response: Response) => {
+    if (!isValidWebhookRequest(request)) {
+        response.status(401).end();
+        return;
+    }
+
+    try {
+        const handleUpdate = webhookCallback(getTelegramBot(), "express");
+        await handleUpdate(request, response);
+    } catch (error) {
+        console.error("Falha ao processar atualização do Telegram.", error);
+        if (!response.headersSent) {
+            // Responde 200 mesmo em erro interno já tratado, para evitar reenvio em loop pelo Telegram.
+            response.status(200).end();
+        }
+    }
+});
+
+telegramRoutes.post("/link-code", requireAuthentication, async (request: AuthenticatedRequest, response: Response) => {
+    try {
+        const { code, expiresAt } = await createLinkCode(request.auth!.userId);
+        response.status(201).json({
+            code,
+            expiresAt: expiresAt.toISOString(),
+            telegramLink: buildTelegramDeepLink(code)
+        });
+    } catch (error) {
+        if (error instanceof TelegramConfigurationError) {
+            response.status(500).json({ error: "A integração com o Telegram não está configurada." });
+            return;
+        }
+        console.error("Não foi possível gerar o código de vínculo do Telegram.", error);
+        response.status(500).json({ error: "Não foi possível gerar o código de vínculo." });
+    }
+});
+
+telegramRoutes.delete("/link", requireAuthentication, async (request: AuthenticatedRequest, response: Response) => {
+    try {
+        await unlinkUser(request.auth!.userId);
+        response.status(204).send();
+    } catch (error) {
+        console.error("Não foi possível desvincular o Telegram.", error);
+        response.status(500).json({ error: "Não foi possível desvincular o Telegram." });
+    }
+});
+
+export default telegramRoutes;

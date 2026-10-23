@@ -131,6 +131,9 @@ function clearApplicationData() {
     reminderList.replaceChildren();
     historyList.replaceChildren();
     historyDetail.replaceChildren();
+    renderTelegramLinked(false);
+    telegramCodeBox.hidden = true;
+    telegramOpenLink.hidden = true;
     questionInput.value = "";
     medicationForm.reset();
     reminderForm.reset();
@@ -151,6 +154,7 @@ function showApplication(user) {
     if (userAvatar) userAvatar.textContent = user.name?.trim()?.charAt(0)?.toUpperCase() || "M";
     currentAuthUserId = user.id;
     setView("chat");
+    renderTelegramLinked(Boolean(user.telegramLinked));
     const reminderLoad = loadReminders();
     if (getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext }) === "enabled") {
         setNotificationState("pending", "Permissão concedida. Carregando seus lembretes para retomar as notificações…");
@@ -1007,6 +1011,92 @@ reminderForm.addEventListener("submit", async (event) => {
         setReminderLoading(false);
     }
 });
+
+const telegramStatus = document.querySelector("#telegram-status");
+const telegramCodeBox = document.querySelector("#telegram-code-box");
+const telegramCodeValue = document.querySelector("#telegram-code-value");
+const telegramCopyButton = document.querySelector("#telegram-copy-button");
+const telegramRefreshButton = document.querySelector("#telegram-refresh-button");
+const telegramOpenLink = document.querySelector("#telegram-open-link");
+const telegramConnectButton = document.querySelector("#telegram-connect-button");
+const telegramDisconnectButton = document.querySelector("#telegram-disconnect-button");
+
+function renderTelegramLinked(linked) {
+    telegramStatus.dataset.state = linked ? "linked" : "";
+    telegramStatus.textContent = linked
+        ? "Telegram conectado. Você já pode enviar perguntas sobre bulas pelo bot."
+        : "Vincule sua conta para consultar bulas também pelo Telegram.";
+    telegramConnectButton.hidden = linked;
+    telegramDisconnectButton.hidden = !linked;
+    if (linked) {
+        telegramCodeBox.hidden = true;
+        telegramOpenLink.hidden = true;
+    }
+}
+
+async function generateTelegramLinkCode() {
+    telegramConnectButton.disabled = true;
+    try {
+        const response = await authenticatedFetch("/api/telegram/link-code", { method: "POST" });
+        if (!response.ok) throw new Error(await readError(response, "Não foi possível gerar o código de vínculo."));
+        const data = await response.json();
+        if (!data || typeof data.code !== "string" || typeof data.telegramLink !== "string") {
+            throw new Error("Resposta inesperada ao gerar o código de vínculo.");
+        }
+        telegramCodeValue.textContent = data.code;
+        telegramCodeBox.hidden = false;
+        telegramOpenLink.href = data.telegramLink;
+        telegramOpenLink.hidden = false;
+        telegramStatus.textContent = "Envie esse código para o bot no Telegram (ou abra o link) para concluir o vínculo.";
+    } catch (error) {
+        telegramStatus.textContent = error instanceof Error ? error.message : "Não foi possível gerar o código de vínculo.";
+    } finally {
+        telegramConnectButton.disabled = false;
+    }
+}
+
+async function copyTelegramCode() {
+    const code = telegramCodeValue.textContent || "";
+    if (!code) return;
+    try {
+        await navigator.clipboard.writeText(code);
+        telegramCopyButton.textContent = "Copiado!";
+    } catch {
+        telegramCopyButton.textContent = "Não foi possível copiar";
+    } finally {
+        window.setTimeout(() => { telegramCopyButton.textContent = "Copiar"; }, 2000);
+    }
+}
+
+async function refreshTelegramLinkStatus() {
+    try {
+        const response = await authenticatedFetch("/api/auth/me");
+        if (!response.ok) throw new Error("request-failed");
+        const data = await response.json();
+        renderTelegramLinked(Boolean(data?.user?.telegramLinked));
+    } catch {
+        telegramStatus.textContent = "Não foi possível verificar o status do vínculo. Tente novamente.";
+    }
+}
+
+async function disconnectTelegram() {
+    if (!window.confirm("Desvincular o Telegram desta conta?")) return;
+    telegramDisconnectButton.disabled = true;
+    try {
+        const response = await authenticatedFetch("/api/telegram/link", { method: "DELETE" });
+        if (!response.ok) throw new Error(await readError(response, "Não foi possível desvincular o Telegram."));
+        renderTelegramLinked(false);
+    } catch (error) {
+        telegramStatus.textContent = error instanceof Error ? error.message : "Não foi possível desvincular o Telegram.";
+    } finally {
+        telegramDisconnectButton.disabled = false;
+    }
+}
+
+telegramConnectButton.addEventListener("click", generateTelegramLinkCode);
+telegramCopyButton.addEventListener("click", copyTelegramCode);
+telegramRefreshButton.addEventListener("click", refreshTelegramLinkStatus);
+telegramDisconnectButton.addEventListener("click", disconnectTelegram);
 
 function formatHistoryDate(value) {
     const date = new Date(value);

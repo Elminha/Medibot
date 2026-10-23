@@ -343,6 +343,20 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 #notification-status[data-state="blocked"] { color: var(--danger); }
 .frequency-gap { margin: 0 0 14px; padding: 11px 13px; border: 1px solid var(--warning-border); border-radius: var(--radius-sm); background: var(--warning-soft); color: var(--warning-text); font-size: .83rem; line-height: 1.45; }
 
+/* ===== Telegram ===== */
+.telegram-card { align-items: flex-start; }
+.telegram-card .telegram-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: none; }
+.telegram-code-box { margin-top: 10px; }
+.telegram-code-row { display: flex; align-items: center; gap: 8px; color: var(--text) !important; font-size: .9rem !important; }
+.telegram-code-row strong { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 1rem; letter-spacing: .06em; color: var(--primary); }
+#telegram-status[data-state="linked"] { color: var(--primary); }
+#telegram-open-link { text-decoration: none; }
+
+@media (max-width: 760px) {
+    .telegram-card .telegram-actions { align-items: stretch; width: 100%; }
+    .telegram-card .telegram-actions a, .telegram-card .telegram-actions button { width: 100%; text-align: center; }
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 760px) {
     .sidebar { position: fixed; z-index: 10; top: 0; bottom: 0; left: 0; width: min(290px, 84vw); transform: translateX(-105%); box-shadow: none; transition: transform .2s; }

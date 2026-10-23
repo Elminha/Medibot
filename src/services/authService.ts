@@ -23,6 +23,7 @@ export interface AuthUser {
     email: string | null;
     phone: string | null;
     timezone: string;
+    telegramLinked: boolean;
 }
 
 export interface RegisterInput {
@@ -50,6 +51,7 @@ interface AuthUserRow {
     phone: string | null;
     timezone: string;
     password_hash: string;
+    telegram_chat_id: string | null;
 }
 
 export class AccountAlreadyExistsError extends Error {
@@ -109,7 +111,8 @@ function toAuthUser(row: AuthUserRow): AuthUser {
         // placeholder "AUTH-<uuid>" no telefone para satisfazer a coluna NOT NULL/UNIQUE
         // que existia então. Isso não é um telefone real e nunca deve ser exposto.
         phone: row.phone && row.phone.startsWith("AUTH-") ? null : row.phone,
-        timezone: row.timezone
+        timezone: row.timezone,
+        telegramLinked: row.telegram_chat_id !== null
     };
 }
 
@@ -176,7 +179,7 @@ export async function registerUser(input: RegisterInput): Promise<AuthResult> {
         const result = await pool.query<AuthUserRow>(
             `INSERT INTO users (name, email, password_hash, phone, timezone)
              VALUES ($1, $2, $3, $4, $5)
-             RETURNING id, name, email, phone, timezone, password_hash;`,
+             RETURNING id, name, email, phone, timezone, password_hash, telegram_chat_id;`,
             [name, email ?? null, passwordHash, phone ?? null, timezone]
         );
         const user = toAuthUser(result.rows[0]);
@@ -199,7 +202,7 @@ export async function loginUser(input: LoginInput): Promise<AuthResult> {
     }
 
     const result = await getDatabasePool().query<AuthUserRow>(
-        `SELECT id, name, email, phone, timezone, password_hash
+        `SELECT id, name, email, phone, timezone, password_hash, telegram_chat_id
          FROM users
          WHERE (email = $1 OR phone = $1) AND password_hash IS NOT NULL;`,
         [identifier.value]
@@ -216,7 +219,7 @@ export async function loginUser(input: LoginInput): Promise<AuthResult> {
 
 export async function getAuthUserById(userId: number): Promise<AuthUser> {
     const result = await getDatabasePool().query<AuthUserRow>(
-        `SELECT id, name, email, phone, timezone, password_hash
+        `SELECT id, name, email, phone, timezone, password_hash, telegram_chat_id
          FROM users
          WHERE id = $1 AND password_hash IS NOT NULL;`,
         [userId]

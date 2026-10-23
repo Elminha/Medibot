@@ -194,6 +194,25 @@
                 </div>
                 <button type="button" class="primary-button" id="notification-toggle">Ativar notificações</button>
             </section>
+
+            <section class="notification-settings telegram-card" id="telegram-card" aria-labelledby="telegram-title">
+                <div class="notification-copy">
+                    <h3 id="telegram-title">Conectar Telegram</h3>
+                    <p id="telegram-status" role="status" aria-live="polite">Vincule sua conta para consultar bulas também pelo Telegram.</p>
+                    <div class="telegram-code-box" id="telegram-code-box" hidden>
+                        <p class="telegram-code-row">
+                            Código: <strong id="telegram-code-value"></strong>
+                            <button type="button" class="secondary-button" id="telegram-copy-button">Copiar</button>
+                        </p>
+                        <p class="notification-limit">O código expira em 10 minutos. Depois de concluir no Telegram, <button type="button" class="text-button" id="telegram-refresh-button">atualizar status</button>.</p>
+                    </div>
+                </div>
+                <div class="telegram-actions">
+                    <a class="secondary-button" id="telegram-open-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Abrir no Telegram</a>
+                    <button type="button" class="primary-button" id="telegram-connect-button">Conectar Telegram</button>
+                    <button type="button" class="danger-button" id="telegram-disconnect-button" hidden>Desvincular</button>
+                </div>
+            </section>
             <p class="frequency-gap" id="frequency-gap" hidden>Os lembretes semanais e personalizados não serão notificados: ainda não há dias programados definidos para essas frequências.</p>
 
             <form class="reminder-form" id="reminder-form" novalidate>

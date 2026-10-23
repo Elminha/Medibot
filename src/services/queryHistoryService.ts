@@ -67,6 +67,18 @@ export async function listQueries(userId: number): Promise<QueryHistoryEntry[]> 
     return result.rows.map(toQueryHistoryEntry);
 }
 
+/** Conta quantas consultas o usuário fez desde `since` (usado para limitar o uso do bot do Telegram). */
+export async function countQueriesSince(userId: number, since: Date): Promise<number> {
+    const result = await getDatabasePool().query<{ count: string }>(
+        `SELECT COUNT(*) AS count
+         FROM queries
+         WHERE user_id = $1 AND created_at >= $2;`,
+        [userId, since]
+    );
+
+    return Number(result.rows[0]?.count ?? 0);
+}
+
 export async function getQueryById(userId: number, id: number): Promise<QueryHistoryEntry> {
     const result = await getDatabasePool().query<QueryHistoryRow>(
         `SELECT id, question, answer, sources, created_at
