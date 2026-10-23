@@ -1,7 +1,7 @@
 import { Router, type Response } from "express";
 import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
 import { consultarBula } from "../services/bulaService.js";
-import { saveQuery } from "../services/queryHistoryService.js";
+import { getRecentConversationTurns, saveQuery } from "../services/queryHistoryService.js";
 
 const bulaRoutes = Router();
 
@@ -17,10 +17,18 @@ bulaRoutes.post("/", async (request: AuthenticatedRequest, response: Response) =
     }
 
     const normalizedQuestion = question.trim();
+    let history: Awaited<ReturnType<typeof getRecentConversationTurns>> = [];
+
+    try {
+        history = await getRecentConversationTurns(request.auth!.userId);
+    } catch (error) {
+        console.error("Não foi possível carregar o contexto da conversa.", error);
+    }
+
     let resultado;
 
     try {
-        resultado = await consultarBula(normalizedQuestion);
+        resultado = await consultarBula(normalizedQuestion, { history });
     } catch {
         return response.status(500).json({
             error: "Não foi possível consultar a bula no momento. Tente novamente mais tarde."

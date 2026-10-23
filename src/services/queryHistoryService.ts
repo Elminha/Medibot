@@ -1,4 +1,8 @@
 import { getDatabasePool } from "../database/database.js";
+import type { ConversationTurn } from "./bulaService.js";
+
+export const CONVERSATION_HISTORY_LIMIT = 3;
+export const CONVERSATION_HISTORY_WINDOW_MINUTES = 30;
 
 export interface QueryHistoryEntry {
     id: number;
@@ -77,6 +81,45 @@ export async function countQueriesSince(userId: number, since: Date): Promise<nu
     );
 
     return Number(result.rows[0]?.count ?? 0);
+}
+
+/**
+ * A partir de entradas já ordenadas da mais recente para a mais antiga, seleciona
+ * as últimas `limit` trocas dentro da janela de tempo e devolve em ordem
+ * cronológica (mais antiga primeiro), pronta para compor o contexto enviado ao modelo.
+ */
+export function selectRecentConversationTurns(
+    entriesNewestFirst: QueryHistoryEntry[],
+    now: Date = new Date(),
+    limit: number = CONVERSATION_HISTORY_LIMIT,
+    windowMinutes: number = CONVERSATION_HISTORY_WINDOW_MINUTES
+): ConversationTurn[] {
+    const sinceMs = now.getTime() - windowMinutes * 60_000;
+
+    return entriesNewestFirst
+        .filter((entry) => entry.createdAt.getTime() >= sinceMs)
+        .slice(0, limit)
+        .reverse()
+        .map(({ question, answer, sources }) => ({ question, answer, sources }));
+}
+
+/** Busca as últimas trocas recentes do usuário (limite e janela de tempo padrão), em ordem cronológica. */
+export async function getRecentConversationTurns(
+    userId: number,
+    now: Date = new Date()
+): Promise<ConversationTurn[]> {
+    const since = new Date(now.getTime() - CONVERSATION_HISTORY_WINDOW_MINUTES * 60_000);
+
+    const result = await getDatabasePool().query<QueryHistoryRow>(
+        `SELECT id, question, answer, sources, created_at
+         FROM queries
+         WHERE user_id = $1 AND created_at >= $2
+         ORDER BY created_at DESC, id DESC
+         LIMIT $3;`,
+        [userId, since, CONVERSATION_HISTORY_LIMIT]
+    );
+
+    return selectRecentConversationTurns(result.rows.map(toQueryHistoryEntry), now);
 }
 
 export async function getQueryById(userId: number, id: number): Promise<QueryHistoryEntry> {

@@ -1,6 +1,6 @@
 import { Bot, type Context } from "grammy";
 import { consultarBula } from "./bulaService.js";
-import { countQueriesSince, saveQuery } from "./queryHistoryService.js";
+import { countQueriesSince, getRecentConversationTurns, saveQuery } from "./queryHistoryService.js";
 import { hasExceededHourlyLimit } from "./telegramRateLimiter.js";
 import {
     consumeLinkCode,
@@ -57,8 +57,20 @@ async function replyWithHtmlFallback(ctx: Context, html: string): Promise<void> 
     }
 }
 
-async function sendBulaAnswer(ctx: Context, answer: string): Promise<void> {
-    const html = `${markdownToTelegramHtml(answer)}\n\n<i>${escapeTelegramHtml(TELEGRAM_SAFETY_NOTICE)}</i>`;
+async function sendBulaAnswer(
+    ctx: Context,
+    resultado: { answer: string; sources: string[]; usedFileSearch: boolean }
+): Promise<void> {
+    let html = markdownToTelegramHtml(resultado.answer);
+
+    if (resultado.sources.length > 0) {
+        html += `\n\n<i>Fontes: ${escapeTelegramHtml(resultado.sources.join(", "))}</i>`;
+    }
+
+    if (resultado.usedFileSearch) {
+        html += `\n\n<i>${escapeTelegramHtml(TELEGRAM_SAFETY_NOTICE)}</i>`;
+    }
+
     const parts = splitTelegramMessage(html);
 
     for (const part of parts) {
@@ -168,9 +180,16 @@ function registerHandlers(bot: Bot): void {
 
         await ctx.replyWithChatAction("typing").catch(() => undefined);
 
+        let history: Awaited<ReturnType<typeof getRecentConversationTurns>> = [];
+        try {
+            history = await getRecentConversationTurns(userId);
+        } catch (error) {
+            console.error("Não foi possível carregar o contexto da conversa via Telegram.", error);
+        }
+
         let resultado;
         try {
-            resultado = await consultarBula(question);
+            resultado = await consultarBula(question, { history });
         } catch (error) {
             console.error("Falha ao consultar a bula via Telegram.", error);
             await ctx.reply("Não foi possível consultar a bula agora. Tente novamente em alguns instantes.");
@@ -183,7 +202,7 @@ function registerHandlers(bot: Bot): void {
             console.error("Não foi possível salvar o histórico da consulta vinda do Telegram.", error);
         }
 
-        await sendBulaAnswer(ctx, resultado.answer);
+        await sendBulaAnswer(ctx, resultado);
     });
 
     bot.catch((error) => {
