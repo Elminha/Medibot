@@ -1037,14 +1037,19 @@ function showHistoryDetail(query) {
     }
 }
 
+let historyDetailRequestId = 0;
+
 async function loadQueryDetail(id) {
+    const requestId = ++historyDetailRequestId;
     try {
         const response = await authenticatedFetch(`/api/queries/${id}`);
         if (!response.ok) throw new Error(await readError(response, "Não foi possível carregar esta consulta."));
         const data = await response.json();
         if (!data || !data.query) throw new Error("Resposta inesperada ao carregar a consulta.");
+        if (requestId !== historyDetailRequestId) return;
         showHistoryDetail(data.query);
     } catch (error) {
+        if (requestId !== historyDetailRequestId) return;
         historyDetail.replaceChildren();
         const message = document.createElement("p");
         message.className = "history-state";
@@ -1053,14 +1058,19 @@ async function loadQueryDetail(id) {
     }
 }
 
+let historyListRequestId = 0;
+
 async function loadQueryHistory() {
+    const requestId = ++historyListRequestId;
     historyList.setAttribute("aria-busy", "true");
-    historyList.replaceChildren();
     try {
         const response = await authenticatedFetch("/api/queries");
         if (!response.ok) throw new Error(await readError(response, "Não foi possível carregar o histórico."));
         const data = await response.json();
         if (!data || !Array.isArray(data.queries)) throw new Error("Resposta inesperada ao carregar o histórico.");
+
+        if (requestId !== historyListRequestId) return;
+        historyList.replaceChildren();
 
         if (!data.queries.length) {
             const empty = buildEmptyState(
@@ -1084,6 +1094,7 @@ async function loadQueryHistory() {
             const question = document.createElement("span");
             question.className = "history-question";
             question.textContent = query.question;
+            item.title = query.question;
             const date = document.createElement("span");
             date.className = "history-date";
             date.textContent = formatHistoryDate(query.createdAt || query.created_at);
@@ -1100,12 +1111,16 @@ async function loadQueryHistory() {
             }
         });
     } catch (error) {
+        if (requestId !== historyListRequestId) return;
+        historyList.replaceChildren();
         const message = document.createElement("p");
         message.className = "history-state feedback-error";
         message.textContent = error instanceof Error ? error.message : "Não foi possível carregar o histórico.";
         historyList.append(message);
     } finally {
-        historyList.setAttribute("aria-busy", "false");
+        if (requestId === historyListRequestId) {
+            historyList.setAttribute("aria-busy", "false");
+        }
     }
 }
 
@@ -1119,7 +1134,10 @@ function setView(view) {
     document.querySelector("#sidebar").classList.remove("mobile-open");
 }
 
-document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
+document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => {
+    setView(button.dataset.view);
+    if (button.dataset.view === "history") loadQueryHistory();
+}));
 document.querySelector("#new-chat-button").addEventListener("click", () => {
     messages.replaceChildren();
     document.querySelector(".suggestions").hidden = false;
