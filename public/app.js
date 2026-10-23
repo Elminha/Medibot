@@ -18,6 +18,7 @@ const historyList = document.querySelector("#history-list");
 const historyDetail = document.querySelector("#history-detail");
 
 let isWaiting = false;
+let queryHistoryLoadVersion = 0;
 
 function getAuthToken() {
     return window.localStorage.getItem(authTokenStorageKey)?.trim() || "";
@@ -57,7 +58,9 @@ function showRegister() {
 }
 
 function clearApplicationData() {
+    queryHistoryLoadVersion += 1;
     messages.replaceChildren();
+    document.querySelector(".suggestions").hidden = false;
     addMessage("Olá! Eu sou o MediBot. Posso ajudar você a compreender informações presentes nas bulas dos medicamentos disponíveis no sistema. Faça uma pergunta sobre um medicamento.", "bot");
     medicationList.replaceChildren();
     reminderList.replaceChildren();
@@ -162,13 +165,15 @@ async function sendQuestion(question) {
 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 45000);
+    const requestId = window.crypto.randomUUID();
 
     try {
         const response = await authenticatedFetch("/api/bula", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`
+                Authorization: `Bearer ${token}`,
+                "X-Idempotency-Key": requestId
             },
             body: JSON.stringify({ question: trimmedQuestion }),
             signal: controller.signal
@@ -207,6 +212,13 @@ async function sendQuestion(question) {
 form.addEventListener("submit", (event) => {
     event.preventDefault();
     sendQuestion(questionInput.value);
+});
+
+questionInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+    }
 });
 
 suggestionButtons.forEach((button) => {
@@ -782,6 +794,7 @@ async function loadQueryDetail(id) {
 }
 
 async function loadQueryHistory() {
+    const loadVersion = ++queryHistoryLoadVersion;
     historyList.setAttribute("aria-busy", "true");
     historyList.replaceChildren();
     try {
@@ -789,6 +802,8 @@ async function loadQueryHistory() {
         if (!response.ok) throw new Error(await readError(response, "Não foi possível carregar o histórico."));
         const data = await response.json();
         if (!data || !Array.isArray(data.queries)) throw new Error("Resposta inesperada ao carregar o histórico.");
+
+        if (loadVersion !== queryHistoryLoadVersion) return;
 
         if (!data.queries.length) {
             const message = document.createElement("p");
@@ -835,14 +850,14 @@ document.querySelector("#show-login").addEventListener("click", () => showLogin(
 
 loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const email = document.querySelector("#login-email").value.trim();
+    const phone = document.querySelector("#login-phone").value.trim();
     const password = document.querySelector("#login-password").value;
     loginFeedback.textContent = "";
     try {
         const response = await fetch("/api/auth/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, password })
+            body: JSON.stringify({ phone, password })
         });
         if (!response.ok) throw new Error(await readError(response, "Não foi possível entrar."));
         const data = await response.json();
@@ -858,18 +873,18 @@ loginForm.addEventListener("submit", async (event) => {
 registerForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const name = document.querySelector("#register-name").value.trim();
-    const email = document.querySelector("#register-email").value.trim();
+    const phone = document.querySelector("#register-phone").value.trim();
     const password = document.querySelector("#register-password").value;
     registerFeedback.textContent = "";
     try {
         const response = await fetch("/api/auth/register", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, email, password })
+            body: JSON.stringify({ name, phone, password })
         });
         if (!response.ok) throw new Error(await readError(response, "Não foi possível criar a conta."));
         registerForm.reset();
-        showLogin("Conta criada com sucesso. Agora entre com seu e-mail e senha.", true);
+        showLogin("Conta criada com sucesso. Agora entre com seu telefone e senha.", true);
     } catch (error) {
         registerFeedback.textContent = error instanceof Error ? error.message : "Não foi possível criar a conta.";
     }

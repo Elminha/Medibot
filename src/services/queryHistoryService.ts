@@ -43,16 +43,43 @@ export async function saveQuery(
     userId: number,
     question: string,
     answer: string,
-    sources: string[]
+    sources: string[],
+    requestId: string
 ): Promise<QueryHistoryEntry> {
     const result = await getDatabasePool().query<QueryHistoryRow>(
-        `INSERT INTO queries (user_id, question, answer, sources)
-         VALUES ($1, $2, $3, $4::jsonb)
-         RETURNING id, question, answer, sources, created_at;`,
-        [userId, question, answer, JSON.stringify(sources)]
+        `WITH inserted AS (
+            INSERT INTO queries (user_id, question, answer, sources, request_id)
+            VALUES ($1, $2, $3, $4::jsonb, $5::uuid)
+            ON CONFLICT (user_id, request_id) WHERE request_id IS NOT NULL DO NOTHING
+            RETURNING id, question, answer, sources, created_at
+         )
+         SELECT id, question, answer, sources, created_at FROM inserted
+         UNION ALL
+         SELECT id, question, answer, sources, created_at
+         FROM queries
+         WHERE user_id = $1 AND request_id = $5::uuid
+         LIMIT 1;`,
+        [userId, question, answer, JSON.stringify(sources), requestId]
     );
 
-    return toQueryHistoryEntry(result.rows[0]);
+    if (result.rows[0]) {
+        return toQueryHistoryEntry(result.rows[0]);
+    }
+
+    // In concurrent retries PostgreSQL can detect the unique conflict before
+    // this statement's snapshot can see the other transaction's row.
+    const existing = await getDatabasePool().query<QueryHistoryRow>(
+        `SELECT id, question, answer, sources, created_at
+         FROM queries
+         WHERE user_id = $1 AND request_id = $2::uuid;`,
+        [userId, requestId]
+    );
+
+    if (!existing.rows[0]) {
+        throw new Error("Não foi possível salvar ou recuperar a consulta.");
+    }
+
+    return toQueryHistoryEntry(existing.rows[0]);
 }
 
 export async function listQueries(userId: number): Promise<QueryHistoryEntry[]> {
