@@ -4,9 +4,6 @@
         { "src": "api/index.ts", "use": "@vercel/node" },
         { "src": "public/**", "use": "@vercel/static" }
     ],
-    "functions": {
-        "api/index.ts": { "maxDuration": 60 }
-    },
     "routes": [
         { "src": "/api/(.*)", "dest": "/api/index.ts" },
         { "src": "/health", "dest": "/api/index.ts" },
