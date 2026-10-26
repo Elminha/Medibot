@@ -74,6 +74,7 @@ const RATE_LIMITED_MESSAGE =
 const GROUP_CHAT_HISTORY_MESSAGE = "Por privacidade, use /historico em uma conversa privada comigo.";
 const GROUP_CHAT_DELETE_MESSAGE = "Por privacidade, use /apagar em uma conversa privada comigo.";
 const UNKNOWN_ACTION_MESSAGE = "Ação desconhecida ou expirada.";
+const UNKNOWN_COMMAND_MESSAGE = "Não conheci esse comando. Use /ajuda para ver os comandos disponíveis.";
 
 /**
  * Monta a confirmação de vínculo, acrescentando o aviso sobre consultas
@@ -86,6 +87,24 @@ export function buildLinkSuccessMessage(existingQueryCount: number): string {
     }
     const noun = existingQueryCount === 1 ? "consulta anterior" : "consultas anteriores";
     return `${base} Você tem ${existingQueryCount} ${noun}. Use /historico para ver.`;
+}
+
+/**
+ * Defesa em profundidade: mesmo com a ordem de registro correta, o handler de
+ * texto livre nunca deve tratar uma mensagem que seja um comando (atual ou
+ * futuro) como pergunta. Verifica tanto o prefixo "/" quanto a entity
+ * `bot_command` que o Telegram anexa no início da mensagem.
+ */
+function isCommandMessage(ctx: Context): boolean {
+    const text = ctx.message?.text;
+    if (!text) {
+        return false;
+    }
+    if (text.startsWith("/")) {
+        return true;
+    }
+    const entities = ctx.message?.entities ?? [];
+    return entities.some((entity) => entity.type === "bot_command" && entity.offset === 0);
 }
 
 function stripHtml(html: string): string {
@@ -255,7 +274,8 @@ async function handleDeleteConfirmCallback(ctx: Context, chatId: number, minutes
     ).catch(() => undefined);
 }
 
-function registerHandlers(bot: Bot): void {
+/** Exportado para o teste de roteamento (tests/telegramBotRouting.test.ts), que monta um bot real. */
+export function registerHandlers(bot: Bot): void {
     bot.use(async (ctx, next) => {
         const chatId = ctx.chat?.id;
         const updateId = ctx.update.update_id;
@@ -301,57 +321,11 @@ function registerHandlers(bot: Bot): void {
         await ctx.reply(HELP_MESSAGE);
     });
 
-    bot.on("message:text", async (ctx) => {
-        const chatId = ctx.chat?.id;
-        if (chatId === undefined) {
-            return;
-        }
-
-        const userId = await getUserIdByChatId(chatId);
-        if (!userId) {
-            await ctx.reply(NOT_LINKED_MESSAGE);
-            return;
-        }
-
-        const question = ctx.message.text.trim();
-        if (!question) {
-            return;
-        }
-
-        const oneHourAgo = new Date(Date.now() - 60 * 60_000);
-        const recentQuestionCount = await countQueriesSince(userId, oneHourAgo);
-        if (hasExceededHourlyLimit(recentQuestionCount)) {
-            await ctx.reply(RATE_LIMITED_MESSAGE);
-            return;
-        }
-
-        await ctx.replyWithChatAction("typing").catch(() => undefined);
-
-        let history: Awaited<ReturnType<typeof getRecentConversationTurns>> = [];
-        try {
-            history = await getRecentConversationTurns(userId);
-        } catch (error) {
-            console.error("Não foi possível carregar o contexto da conversa via Telegram.", error);
-        }
-
-        let resultado;
-        try {
-            resultado = await consultarBula(question, { history });
-        } catch (error) {
-            console.error("Falha ao consultar a bula via Telegram.", error);
-            await ctx.reply("Não foi possível consultar a bula agora. Tente novamente em alguns instantes.");
-            return;
-        }
-
-        try {
-            await saveQuery(userId, question, resultado.answer, resultado.sources, "telegram");
-        } catch (error) {
-            console.error("Não foi possível salvar o histórico da consulta vinda do Telegram.", error);
-        }
-
-        await sendBulaAnswer(ctx, resultado);
-    });
-
+    // IMPORTANTE: todo `bot.command(...)` precisa ser registrado ANTES do
+    // `bot.on("message:text", ...)` abaixo. grammY roda os middlewares na ordem
+    // de registro e cada um encerra a cadeia se seu filtro bater (sem chamar
+    // `next()`); "message:text" casa com QUALQUER mensagem de texto, incluindo
+    // comandos, então um comando registrado depois dele nunca seria alcançado.
     bot.command("historico", async (ctx) => {
         const chatId = ctx.chat?.id;
         if (chatId === undefined) {
@@ -401,6 +375,64 @@ function registerHandlers(bot: Bot): void {
             `Isso vai apagar ${count} consulta${count === 1 ? "" : "s"} feita${count === 1 ? "" : "s"} por aqui pelo Telegram. As consultas feitas pelo site não serão afetadas e continuam no histórico do site, onde podem ser apagadas uma a uma. Confirma?`,
             { reply_markup: keyboard }
         );
+    });
+
+    bot.on("message:text", async (ctx) => {
+        const chatId = ctx.chat?.id;
+        if (chatId === undefined) {
+            return;
+        }
+
+        // Defesa em profundidade: nenhum comando (conhecido ou não) vira pergunta,
+        // chama a OpenAI, é salvo em queries ou conta no limite por hora.
+        if (isCommandMessage(ctx)) {
+            await ctx.reply(UNKNOWN_COMMAND_MESSAGE);
+            return;
+        }
+
+        const userId = await getUserIdByChatId(chatId);
+        if (!userId) {
+            await ctx.reply(NOT_LINKED_MESSAGE);
+            return;
+        }
+
+        const question = ctx.message.text.trim();
+        if (!question) {
+            return;
+        }
+
+        const oneHourAgo = new Date(Date.now() - 60 * 60_000);
+        const recentQuestionCount = await countQueriesSince(userId, oneHourAgo);
+        if (hasExceededHourlyLimit(recentQuestionCount)) {
+            await ctx.reply(RATE_LIMITED_MESSAGE);
+            return;
+        }
+
+        await ctx.replyWithChatAction("typing").catch(() => undefined);
+
+        let history: Awaited<ReturnType<typeof getRecentConversationTurns>> = [];
+        try {
+            history = await getRecentConversationTurns(userId);
+        } catch (error) {
+            console.error("Não foi possível carregar o contexto da conversa via Telegram.", error);
+        }
+
+        let resultado;
+        try {
+            resultado = await consultarBula(question, { history });
+        } catch (error) {
+            console.error("Falha ao consultar a bula via Telegram.", error);
+            await ctx.reply("Não foi possível consultar a bula agora. Tente novamente em alguns instantes.");
+            return;
+        }
+
+        try {
+            await saveQuery(userId, question, resultado.answer, resultado.sources, "telegram");
+        } catch (error) {
+            console.error("Não foi possível salvar o histórico da consulta vinda do Telegram.", error);
+        }
+
+        await sendBulaAnswer(ctx, resultado);
     });
 
     bot.on("callback_query:data", async (ctx) => {
