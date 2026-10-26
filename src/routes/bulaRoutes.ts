@@ -40,7 +40,8 @@ bulaRoutes.post("/", async (request: AuthenticatedRequest, response: Response) =
             request.auth!.userId,
             normalizedQuestion,
             resultado.answer,
-            resultado.sources
+            resultado.sources,
+            "site"
         );
     } catch (error) {
         console.error("Não foi possível salvar o histórico da consulta.", error);

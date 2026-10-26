@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import {
     CONVERSATION_HISTORY_LIMIT,
     CONVERSATION_HISTORY_WINDOW_MINUTES,
+    deleteQuery,
+    deleteTelegramQueries,
+    countTelegramQueries,
     selectRecentConversationTurns,
+    type QueryExecutor,
     type QueryHistoryEntry
 } from "../src/services/queryHistoryService.ts";
 
@@ -13,8 +17,24 @@ function makeEntry(id: number, minutesAgo: number, now: Date): QueryHistoryEntry
         question: `pergunta ${id}`,
         answer: `resposta ${id}`,
         sources: [`fonte-${id}`],
+        channel: "site",
         createdAt: new Date(now.getTime() - minutesAgo * 60_000)
     };
+}
+
+/** "Pool" falso que grava a última consulta SQL+parâmetros, para testar sem banco real. */
+function makeFakeExecutor(response: { rows?: unknown[]; rowCount?: number | null }): {
+    executor: QueryExecutor;
+    calls: Array<{ text: string; params: unknown[] | undefined }>;
+} {
+    const calls: Array<{ text: string; params: unknown[] | undefined }> = [];
+    const executor: QueryExecutor = {
+        async query(text: string, params?: unknown[]) {
+            calls.push({ text, params });
+            return { rows: response.rows ?? [], rowCount: response.rowCount ?? 0 };
+        }
+    };
+    return { executor, calls };
 }
 
 test("mantém no máximo CONVERSATION_HISTORY_LIMIT trocas, mesmo havendo mais disponíveis na janela", () => {
@@ -73,4 +93,52 @@ test("cada troca preserva pergunta, resposta e fontes, sem o id/createdAt", () =
     const turns = selectRecentConversationTurns([makeEntry(1, 1, now)], now);
 
     assert.deepEqual(turns[0], { question: "pergunta 1", answer: "resposta 1", sources: ["fonte-1"] });
+});
+
+test("deleteQuery filtra por id e por user_id, e retorna false quando nada foi apagado", async () => {
+    const { executor, calls } = makeFakeExecutor({ rowCount: 0 });
+    const deleted = await deleteQuery(42, 7, executor);
+
+    assert.equal(deleted, false);
+    assert.match(calls[0].text, /DELETE FROM queries WHERE id = \$1 AND user_id = \$2/);
+    assert.deepEqual(calls[0].params, [7, 42]);
+});
+
+test("deleteQuery retorna true quando a linha pertencia ao usuário e foi apagada", async () => {
+    const { executor } = makeFakeExecutor({ rowCount: 1 });
+    assert.equal(await deleteQuery(42, 7, executor), true);
+});
+
+test("deleteQuery responde igual (false) tanto para consulta inexistente quanto para consulta de outra conta", async () => {
+    // Nos dois casos o banco real devolve rowCount 0 para `WHERE id = $1 AND user_id = $2`,
+    // então a função não tem como (e não deve) diferenciar os dois casos.
+    const naoExiste = makeFakeExecutor({ rowCount: 0 });
+    const deOutraConta = makeFakeExecutor({ rowCount: 0 });
+
+    assert.equal(await deleteQuery(1, 999, naoExiste.executor), false);
+    assert.equal(await deleteQuery(2, 999, deOutraConta.executor), false);
+});
+
+test("deleteTelegramQueries só apaga linhas com channel = 'telegram' do usuário", async () => {
+    const { executor, calls } = makeFakeExecutor({ rowCount: 3 });
+    const deletedCount = await deleteTelegramQueries(42, executor);
+
+    assert.equal(deletedCount, 3);
+    assert.match(calls[0].text, /DELETE FROM queries WHERE user_id = \$1 AND channel = 'telegram'/);
+    assert.deepEqual(calls[0].params, [42]);
+});
+
+test("deleteTelegramQueries não menciona a coluna channel = 'site' em nenhum lugar da query", async () => {
+    const { executor, calls } = makeFakeExecutor({ rowCount: 0 });
+    await deleteTelegramQueries(1, executor);
+    assert.doesNotMatch(calls[0].text, /'site'/);
+});
+
+test("countTelegramQueries conta apenas consultas com channel = 'telegram' do usuário", async () => {
+    const { executor, calls } = makeFakeExecutor({ rows: [{ count: "5" }] });
+    const count = await countTelegramQueries(42, executor);
+
+    assert.equal(count, 5);
+    assert.match(calls[0].text, /WHERE user_id = \$1 AND channel = 'telegram'/);
+    assert.deepEqual(calls[0].params, [42]);
 });

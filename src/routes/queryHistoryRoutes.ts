@@ -1,6 +1,7 @@
 import { Router, type Response } from "express";
 import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
 import {
+    deleteQuery,
     getQueryById,
     listQueries,
     QueryNotFoundError
@@ -47,6 +48,24 @@ queryHistoryRoutes.get("/:id", async (request: AuthenticatedRequest, response: R
             return response.status(404).json({ error: error.message });
         }
         return response.status(500).json({ error: "Não foi possível buscar a consulta." });
+    }
+});
+
+queryHistoryRoutes.delete("/:id", async (request: AuthenticatedRequest, response: Response) => {
+    const id = parseQueryId(request.params.id);
+
+    if (!id) {
+        return response.status(400).json({ error: "O ID da consulta deve ser um inteiro positivo." });
+    }
+
+    try {
+        const deleted = await deleteQuery(getAuthenticatedUserId(request), id);
+        if (!deleted) {
+            return response.status(404).json({ error: "Consulta não encontrada." });
+        }
+        return response.status(204).send();
+    } catch {
+        return response.status(500).json({ error: "Não foi possível apagar a consulta." });
     }
 });
 

@@ -22,6 +22,7 @@ const loggedUser = document.querySelector("#logged-user");
 const userAvatar = document.querySelector(".user-avatar");
 const historyList = document.querySelector("#history-list");
 const historyDetail = document.querySelector("#history-detail");
+const historyFeedback = document.querySelector("#history-feedback");
 
 const themeStorageKey = "medibot_theme";
 const themeToggleButton = document.querySelector("#theme-toggle");
@@ -237,7 +238,8 @@ function clearApplicationData() {
     medicationList.replaceChildren();
     reminderList.replaceChildren();
     historyList.replaceChildren();
-    historyDetail.replaceChildren();
+    showHistoryEmptyDetail();
+    if (historyFeedback) historyFeedback.textContent = "";
     renderTelegramLinked(false);
     telegramCodeBox.hidden = true;
     telegramOpenLink.hidden = true;
@@ -1217,8 +1219,34 @@ function formatHistoryDate(value) {
         : new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
+function channelBadge(channel) {
+    const badge = document.createElement("span");
+    const isTelegram = channel === "telegram";
+    badge.className = `channel-badge channel-badge-${isTelegram ? "telegram" : "site"}`;
+    badge.textContent = isTelegram ? "Telegram" : "Site";
+    return badge;
+}
+
+function showHistoryEmptyDetail(message = "Selecione uma consulta para ver os detalhes.") {
+    historyDetail.replaceChildren();
+    delete historyDetail.dataset.queryId;
+    const state = document.createElement("p");
+    state.className = "history-state";
+    state.textContent = message;
+    historyDetail.append(state);
+}
+
 function showHistoryDetail(query) {
     historyDetail.replaceChildren();
+    historyDetail.dataset.queryId = String(query.id);
+
+    const meta = document.createElement("div");
+    meta.className = "history-detail-meta";
+    const date = document.createElement("span");
+    date.className = "history-date";
+    date.textContent = formatHistoryDate(query.createdAt || query.created_at);
+    meta.append(channelBadge(query.channel), date);
+
     const title = document.createElement("h3");
     title.textContent = "Sua pergunta";
     const question = document.createElement("p");
@@ -1228,7 +1256,7 @@ function showHistoryDetail(query) {
     const answer = document.createElement("div");
     answer.className = "markdown-content";
     renderMarkdown(answer, query.answer);
-    historyDetail.append(title, question, answerTitle, answer);
+    historyDetail.append(meta, title, question, answerTitle, answer);
 
     const sources = Array.isArray(query.sources) ? query.sources.filter((source) => typeof source === "string" && source.trim()) : [];
     if (sources.length) {
@@ -1252,11 +1280,26 @@ async function loadQueryDetail(id) {
         showHistoryDetail(data.query);
     } catch (error) {
         if (requestId !== historyDetailRequestId) return;
-        historyDetail.replaceChildren();
-        const message = document.createElement("p");
-        message.className = "history-state";
-        message.textContent = error instanceof Error ? error.message : "Não foi possível carregar esta consulta.";
-        historyDetail.append(message);
+        showHistoryEmptyDetail(error instanceof Error ? error.message : "Não foi possível carregar esta consulta.");
+    }
+}
+
+async function deleteHistoryQuery(id) {
+    if (historyFeedback) historyFeedback.textContent = "";
+    try {
+        const response = await authenticatedFetch(`/api/queries/${id}`, { method: "DELETE" });
+        if (!response.ok && response.status !== 404) {
+            throw new Error(await readError(response, "Não foi possível apagar esta consulta."));
+        }
+        track("history_item_deleted");
+        if (historyDetail.dataset.queryId === String(id)) {
+            showHistoryEmptyDetail();
+        }
+        await loadQueryHistory();
+    } catch (error) {
+        if (historyFeedback) {
+            historyFeedback.textContent = error instanceof Error ? error.message : "Não foi possível apagar esta consulta.";
+        }
     }
 }
 
@@ -1290,22 +1333,59 @@ async function loadQueryHistory() {
         }
 
         data.queries.forEach((query, index) => {
-            const item = document.createElement("button");
-            item.type = "button";
+            const item = document.createElement("div");
             item.className = "history-item";
+
+            const mainButton = document.createElement("button");
+            mainButton.type = "button";
+            mainButton.className = "history-item-main";
+            mainButton.title = query.question;
             const question = document.createElement("span");
             question.className = "history-question";
             question.textContent = query.question;
-            item.title = query.question;
+            const meta = document.createElement("span");
+            meta.className = "history-item-meta";
             const date = document.createElement("span");
             date.className = "history-date";
             date.textContent = formatHistoryDate(query.createdAt || query.created_at);
-            item.append(question, date);
-            item.addEventListener("click", () => {
-                historyList.querySelectorAll(".history-item").forEach((button) => button.classList.remove("active"));
+            meta.append(channelBadge(query.channel), date);
+            mainButton.append(question, meta);
+            mainButton.addEventListener("click", () => {
+                historyList.querySelectorAll(".history-item").forEach((element) => element.classList.remove("active"));
                 item.classList.add("active");
                 loadQueryDetail(query.id);
             });
+
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "history-item-delete";
+            deleteButton.setAttribute("aria-label", "Apagar esta consulta");
+            deleteButton.title = "Apagar esta consulta";
+            deleteButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
+
+            const confirm = document.createElement("div");
+            confirm.className = "history-item-confirm";
+            confirm.hidden = true;
+            const confirmLabel = document.createElement("span");
+            confirmLabel.textContent = "Apagar esta consulta?";
+            const confirmYes = medicationButton("Apagar", "danger-button", async () => {
+                confirmYes.disabled = true;
+                confirmNo.disabled = true;
+                await deleteHistoryQuery(query.id);
+            });
+            const confirmNo = medicationButton("Cancelar", "secondary-button", () => {
+                confirm.hidden = true;
+                deleteButton.hidden = false;
+            });
+            confirm.append(confirmLabel, confirmYes, confirmNo);
+
+            deleteButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                deleteButton.hidden = true;
+                confirm.hidden = false;
+            });
+
+            item.append(mainButton, deleteButton, confirm);
             historyList.append(item);
             if (index === 0) {
                 item.classList.add("active");

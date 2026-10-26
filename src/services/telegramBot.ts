@@ -1,6 +1,17 @@
-import { Bot, type Context } from "grammy";
+import { Bot, InlineKeyboard, type Context } from "grammy";
 import { consultarBula } from "./bulaService.js";
-import { countQueriesSince, getRecentConversationTurns, saveQuery } from "./queryHistoryService.js";
+import {
+    countQueries,
+    countQueriesSince,
+    countTelegramQueries,
+    deleteTelegramQueries,
+    getQueryById,
+    getRecentConversationTurns,
+    listQueries,
+    QueryNotFoundError,
+    saveQuery,
+    type QueryHistoryEntry
+} from "./queryHistoryService.js";
 import { hasExceededHourlyLimit } from "./telegramRateLimiter.js";
 import {
     consumeLinkCode,
@@ -15,6 +26,24 @@ import {
     splitTelegramMessage,
     TELEGRAM_SAFETY_NOTICE
 } from "./telegramFormatting.js";
+import {
+    buildHistoryOpenCallbackData,
+    buildHistoryPageCallbackData,
+    type HistoryCallbackAction,
+    buildDeleteConfirmCallbackData,
+    currentMinutesSinceEpoch,
+    DELETE_CANCEL_CALLBACK_DATA,
+    isDeleteConfirmationExpired,
+    parseDeleteConfirmCallbackData,
+    parseHistoryCallbackData
+} from "./telegramHistoryCallback.js";
+import {
+    formatHistoryButtonLabel,
+    formatHistoryListMessage,
+    HISTORY_PAGE_SIZE,
+    paginateHistory,
+    resolveHistoryDetailHtml
+} from "./telegramHistoryFormatting.js";
 
 const WELCOME_MESSAGE = [
     "Olá! Eu sou o MediBot.",
@@ -29,6 +58,8 @@ const HELP_MESSAGE = [
     "/start <código> — vincula sua conta do MediBot a este chat",
     "/vincular <código> — igual ao /start com código",
     "/desvincular — remove o vínculo deste chat",
+    "/historico — mostra suas consultas recentes (site e Telegram)",
+    "/apagar — apaga as consultas feitas por aqui pelo Telegram",
     "/ajuda — mostra esta mensagem",
     "",
     "Depois de vinculado, basta enviar sua pergunta sobre um medicamento. Este bot é educativo e não substitui orientação profissional de saúde."
@@ -40,6 +71,23 @@ const NOT_LINKED_MESSAGE =
 const RATE_LIMITED_MESSAGE =
     "Você atingiu o limite de perguntas por hora. Tente novamente mais tarde.";
 
+const GROUP_CHAT_HISTORY_MESSAGE = "Por privacidade, use /historico em uma conversa privada comigo.";
+const GROUP_CHAT_DELETE_MESSAGE = "Por privacidade, use /apagar em uma conversa privada comigo.";
+const UNKNOWN_ACTION_MESSAGE = "Ação desconhecida ou expirada.";
+
+/**
+ * Monta a confirmação de vínculo, acrescentando o aviso sobre consultas
+ * anteriores quando a conta já tinha alguma (em qualquer canal).
+ */
+export function buildLinkSuccessMessage(existingQueryCount: number): string {
+    const base = "Conta vinculada com sucesso. Agora você pode enviar perguntas sobre bulas por aqui.";
+    if (existingQueryCount <= 0) {
+        return base;
+    }
+    const noun = existingQueryCount === 1 ? "consulta anterior" : "consultas anteriores";
+    return `${base} Você tem ${existingQueryCount} ${noun}. Use /historico para ver.`;
+}
+
 function stripHtml(html: string): string {
     return html
         .replace(/<[^>]+>/g, "")
@@ -48,12 +96,16 @@ function stripHtml(html: string): string {
         .replace(/&amp;/g, "&");
 }
 
-async function replyWithHtmlFallback(ctx: Context, html: string): Promise<void> {
+async function replyWithHtmlFallback(
+    ctx: Context,
+    html: string,
+    extra?: { reply_markup?: InlineKeyboard }
+): Promise<void> {
     try {
-        await ctx.reply(html, { parse_mode: "HTML" });
+        await ctx.reply(html, { parse_mode: "HTML", ...extra });
     } catch (error) {
         console.error("Falha ao enviar mensagem formatada no Telegram; reenviando como texto simples.", error);
-        await ctx.reply(stripHtml(html));
+        await ctx.reply(stripHtml(html), extra);
     }
 }
 
@@ -93,9 +145,16 @@ async function handleLinkAttempt(ctx: Context, rawCode: string | undefined): Pro
     const outcome = await consumeLinkCode(code, chatId);
 
     switch (outcome.status) {
-        case "linked":
-            await ctx.reply("Conta vinculada com sucesso. Agora você pode enviar perguntas sobre bulas por aqui.");
+        case "linked": {
+            let existingQueryCount = 0;
+            try {
+                existingQueryCount = await countQueries(outcome.userId);
+            } catch (error) {
+                console.error("Não foi possível contar consultas existentes após vincular conta do Telegram.", error);
+            }
+            await ctx.reply(buildLinkSuccessMessage(existingQueryCount));
             return;
+        }
         case "chat-already-linked":
             await ctx.reply("Este chat já está vinculado a uma conta. Envie /desvincular aqui antes de vincular outra conta.");
             return;
@@ -106,6 +165,94 @@ async function handleLinkAttempt(ctx: Context, rawCode: string | undefined): Pro
         default:
             await ctx.reply("Código inválido ou expirado. Gere um novo código no site e tente novamente.");
     }
+}
+
+function buildHistoryKeyboard(page: ReturnType<typeof paginateHistory>): InlineKeyboard {
+    const keyboard = new InlineKeyboard();
+
+    page.items.forEach((entry, index) => {
+        keyboard.text(formatHistoryButtonLabel(entry, index), buildHistoryOpenCallbackData(entry.id, page.offset));
+        keyboard.row();
+    });
+
+    if (page.hasPrevious) {
+        keyboard.text("⬅ Anterior", buildHistoryPageCallbackData(Math.max(0, page.offset - HISTORY_PAGE_SIZE)));
+    }
+    if (page.hasNext) {
+        keyboard.text("Ver mais ➡", buildHistoryPageCallbackData(page.offset + HISTORY_PAGE_SIZE));
+    }
+
+    return keyboard;
+}
+
+async function sendHistoryPage(ctx: Context, userId: number, offset: number): Promise<void> {
+    const entries = await listQueries(userId);
+    const page = paginateHistory(entries, offset);
+    const text = formatHistoryListMessage(page);
+    const keyboard = page.items.length > 0 ? buildHistoryKeyboard(page) : undefined;
+    await ctx.reply(text, keyboard ? { reply_markup: keyboard } : undefined);
+}
+
+async function handleHistoryCallback(ctx: Context, chatId: number, action: HistoryCallbackAction): Promise<void> {
+    const userId = await getUserIdByChatId(chatId);
+    if (!userId) {
+        await ctx.answerCallbackQuery({ text: NOT_LINKED_MESSAGE, show_alert: true });
+        return;
+    }
+
+    if (action.type === "page") {
+        await ctx.answerCallbackQuery();
+        await sendHistoryPage(ctx, userId, action.offset);
+        return;
+    }
+
+    // SEGURANÇA: getQueryById filtra por WHERE id = $1 AND user_id = $2, então uma
+    // consulta inexistente ou de outra conta cai no mesmo catch, sem distinção.
+    let entry: QueryHistoryEntry | null = null;
+    try {
+        entry = await getQueryById(userId, action.id);
+    } catch (error) {
+        if (!(error instanceof QueryNotFoundError)) {
+            console.error("Falha ao buscar consulta do histórico via Telegram.", error);
+        }
+        entry = null;
+    }
+
+    await ctx.answerCallbackQuery();
+
+    const html = resolveHistoryDetailHtml(entry);
+    if (!entry) {
+        await ctx.reply(html);
+        return;
+    }
+
+    const keyboard = new InlineKeyboard().text("↩ Voltar à lista", buildHistoryPageCallbackData(action.offset));
+    const parts = splitTelegramMessage(html);
+    for (let index = 0; index < parts.length; index += 1) {
+        const isLast = index === parts.length - 1;
+        await replyWithHtmlFallback(ctx, parts[index], isLast ? { reply_markup: keyboard } : undefined);
+    }
+}
+
+async function handleDeleteConfirmCallback(ctx: Context, chatId: number, minutesSinceEpoch: number): Promise<void> {
+    if (isDeleteConfirmationExpired(minutesSinceEpoch)) {
+        await ctx.answerCallbackQuery({ text: "Essa confirmação expirou. Envie /apagar de novo.", show_alert: true });
+        return;
+    }
+
+    const userId = await getUserIdByChatId(chatId);
+    if (!userId) {
+        await ctx.answerCallbackQuery({ text: NOT_LINKED_MESSAGE, show_alert: true });
+        return;
+    }
+
+    const deletedCount = await deleteTelegramQueries(userId);
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText(
+        deletedCount > 0
+            ? `${deletedCount} consulta${deletedCount === 1 ? "" : "s"} feita${deletedCount === 1 ? "" : "s"} pelo Telegram ${deletedCount === 1 ? "foi apagada" : "foram apagadas"}. As mensagens já enviadas neste chat não são apagadas por mim — você pode limpar a conversa pelo próprio Telegram, se quiser. As consultas feitas pelo site continuam no histórico do site, onde podem ser apagadas uma a uma.`
+            : "Não havia mais consultas do Telegram para apagar."
+    ).catch(() => undefined);
 }
 
 function registerHandlers(bot: Bot): void {
@@ -197,12 +344,93 @@ function registerHandlers(bot: Bot): void {
         }
 
         try {
-            await saveQuery(userId, question, resultado.answer, resultado.sources);
+            await saveQuery(userId, question, resultado.answer, resultado.sources, "telegram");
         } catch (error) {
             console.error("Não foi possível salvar o histórico da consulta vinda do Telegram.", error);
         }
 
         await sendBulaAnswer(ctx, resultado);
+    });
+
+    bot.command("historico", async (ctx) => {
+        const chatId = ctx.chat?.id;
+        if (chatId === undefined) {
+            return;
+        }
+        if (ctx.chat?.type !== "private") {
+            await ctx.reply(GROUP_CHAT_HISTORY_MESSAGE);
+            return;
+        }
+
+        const userId = await getUserIdByChatId(chatId);
+        if (!userId) {
+            await ctx.reply(NOT_LINKED_MESSAGE);
+            return;
+        }
+
+        await sendHistoryPage(ctx, userId, 0);
+    });
+
+    bot.command("apagar", async (ctx) => {
+        const chatId = ctx.chat?.id;
+        if (chatId === undefined) {
+            return;
+        }
+        if (ctx.chat?.type !== "private") {
+            await ctx.reply(GROUP_CHAT_DELETE_MESSAGE);
+            return;
+        }
+
+        const userId = await getUserIdByChatId(chatId);
+        if (!userId) {
+            await ctx.reply(NOT_LINKED_MESSAGE);
+            return;
+        }
+
+        const count = await countTelegramQueries(userId);
+        if (count === 0) {
+            await ctx.reply("Não há consultas feitas pelo Telegram para apagar.");
+            return;
+        }
+
+        const keyboard = new InlineKeyboard()
+            .text("Sim, apagar", buildDeleteConfirmCallbackData(currentMinutesSinceEpoch()))
+            .text("Cancelar", DELETE_CANCEL_CALLBACK_DATA);
+
+        await ctx.reply(
+            `Isso vai apagar ${count} consulta${count === 1 ? "" : "s"} feita${count === 1 ? "" : "s"} por aqui pelo Telegram. As consultas feitas pelo site não serão afetadas e continuam no histórico do site, onde podem ser apagadas uma a uma. Confirma?`,
+            { reply_markup: keyboard }
+        );
+    });
+
+    bot.on("callback_query:data", async (ctx) => {
+        const data = ctx.callbackQuery.data;
+        const chatId = ctx.chat?.id;
+
+        if (chatId === undefined) {
+            await ctx.answerCallbackQuery();
+            return;
+        }
+
+        if (data === DELETE_CANCEL_CALLBACK_DATA) {
+            await ctx.answerCallbackQuery({ text: "Operação cancelada." });
+            await ctx.editMessageText("Apagar consultas do Telegram: cancelado.").catch(() => undefined);
+            return;
+        }
+
+        const deleteConfirm = parseDeleteConfirmCallbackData(data);
+        if (deleteConfirm) {
+            await handleDeleteConfirmCallback(ctx, chatId, deleteConfirm.minutesSinceEpoch);
+            return;
+        }
+
+        const historyAction = parseHistoryCallbackData(data);
+        if (historyAction) {
+            await handleHistoryCallback(ctx, chatId, historyAction);
+            return;
+        }
+
+        await ctx.answerCallbackQuery({ text: UNKNOWN_ACTION_MESSAGE });
     });
 
     bot.catch((error) => {
