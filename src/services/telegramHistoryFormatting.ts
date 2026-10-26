@@ -73,7 +73,7 @@ export function formatHistoryListMessage(page: HistoryPage): string {
     }
 
     const lines = page.items.map((entry, index) => formatHistoryListEntryLine(entry, index));
-    return ["Suas consultas mais recentes:", "", ...lines].join("\n\n");
+    return ["Suas consultas mais recentes:", ...lines].join("\n\n");
 }
 
 export function formatHistoryButtonLabel(entry: QueryHistoryEntry, index: number): string {

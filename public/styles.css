@@ -363,8 +363,13 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .telegram-card { align-items: flex-start; }
 .telegram-card .telegram-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: none; }
 .telegram-code-box { margin-top: 10px; }
-.telegram-code-row { display: flex; align-items: center; gap: 8px; color: var(--text) !important; font-size: .9rem !important; }
+.telegram-code-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text) !important; font-size: .9rem !important; }
 .telegram-code-row strong { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 1rem; letter-spacing: .06em; color: var(--primary); }
+.icon-text-button { display: inline-flex; align-items: center; gap: 6px; }
+.icon-text-button svg { width: 15px; height: 15px; flex: none; }
+.telegram-countdown { margin: 6px 0 0; color: var(--text-muted); font-size: .84rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.telegram-countdown.urgent { color: var(--warning-text); }
+.telegram-countdown:empty { display: none; }
 #telegram-status[data-state="linked"] { color: var(--primary); }
 #telegram-open-link { text-decoration: none; }
 

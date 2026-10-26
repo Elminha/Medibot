@@ -2,6 +2,14 @@ import {
     getNotificationAvailability,
     startReminderSchedulerIfAllowed
 } from "./reminderNotifications.js";
+import {
+    formatCountdown,
+    getRemainingMs,
+    isCountdownExpired,
+    isCountdownUrgent,
+    parseStoredLinkCode,
+    TelegramLinkCountdownTimer
+} from "./telegramLinkCountdown.js";
 
 const form = document.querySelector("#chat-form");
 const questionInput = document.querySelector("#question");
@@ -241,6 +249,8 @@ function clearApplicationData() {
     showHistoryEmptyDetail();
     if (historyFeedback) historyFeedback.textContent = "";
     renderTelegramLinked(false);
+    telegramCountdown.stop();
+    clearStoredTelegramLinkCode();
     telegramCodeBox.hidden = true;
     telegramOpenLink.hidden = true;
     questionInput.value = "";
@@ -264,6 +274,7 @@ function showApplication(user) {
     currentAuthUserId = user.id;
     setView("chat");
     renderTelegramLinked(Boolean(user.telegramLinked));
+    if (!user.telegramLinked) restoreTelegramCodeFromStorage();
     const reminderLoad = loadReminders();
     if (getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext }) === "enabled") {
         setNotificationState("pending", "Permissão concedida. Carregando seus lembretes para retomar as notificações…");
@@ -1128,10 +1139,115 @@ const telegramStatus = document.querySelector("#telegram-status");
 const telegramCodeBox = document.querySelector("#telegram-code-box");
 const telegramCodeValue = document.querySelector("#telegram-code-value");
 const telegramCopyButton = document.querySelector("#telegram-copy-button");
+const telegramRegenerateButton = document.querySelector("#telegram-regenerate-button");
+const telegramCountdownEl = document.querySelector("#telegram-countdown");
 const telegramRefreshButton = document.querySelector("#telegram-refresh-button");
 const telegramOpenLink = document.querySelector("#telegram-open-link");
 const telegramConnectButton = document.querySelector("#telegram-connect-button");
 const telegramDisconnectButton = document.querySelector("#telegram-disconnect-button");
+const TELEGRAM_CONNECT_DEFAULT_LABEL = "Conectar Telegram";
+
+// O código de vínculo é um segredo de uso único e vida curta (10 min): guardamos em
+// sessionStorage (não localStorage) para que ele nunca sobreviva além da sessão do
+// navegador, e nunca o enviamos ao Analytics.
+const telegramLinkCodeStorageKey = "medibot_telegram_link_code";
+
+function storeTelegramLinkCode(code, expiresAt, telegramLink) {
+    try {
+        window.sessionStorage.setItem(telegramLinkCodeStorageKey, JSON.stringify({ code, expiresAt, telegramLink }));
+    } catch {
+        // sem sessionStorage disponível: o código simplesmente não sobrevive a um F5
+    }
+}
+
+function clearStoredTelegramLinkCode() {
+    try {
+        window.sessionStorage.removeItem(telegramLinkCodeStorageKey);
+    } catch {
+        // ignore storage access errors
+    }
+}
+
+// O servidor guarda só o hash do código (nunca o código em texto puro), então não há
+// como pedir pra ele "qual era o código?" de novo: sem o sessionStorage, perder a
+// página antes de concluir o vínculo exige gerar um código novo.
+function readStoredTelegramLinkCode() {
+    try {
+        return parseStoredLinkCode(window.sessionStorage.getItem(telegramLinkCodeStorageKey));
+    } catch {
+        return null;
+    }
+}
+
+// Escreve no status, anunciando por leitor de tela só quando pedido. O elemento é uma
+// região live tanto pelo role="status" quanto pelo aria-live="polite" (o role sozinho
+// já implica aria-live polite); por isso removemos os dois antes de uma escrita muda
+// e devolvemos logo em seguida, para a mudança ficar visível no DOM sem ser lida.
+function setTelegramStatusText(text, { announce = true } = {}) {
+    if (!announce) {
+        telegramStatus.removeAttribute("role");
+        telegramStatus.removeAttribute("aria-live");
+    }
+    telegramStatus.textContent = text;
+    if (!announce) {
+        window.requestAnimationFrame(() => {
+            telegramStatus.setAttribute("role", "status");
+            telegramStatus.setAttribute("aria-live", "polite");
+        });
+    }
+}
+
+function handleTelegramCodeExpired() {
+    clearStoredTelegramLinkCode();
+    telegramCodeValue.textContent = "Código expirado";
+    telegramCountdownEl.textContent = "";
+    telegramCountdownEl.classList.remove("urgent");
+    telegramCopyButton.hidden = true;
+    telegramRegenerateButton.hidden = true;
+    telegramOpenLink.hidden = true;
+    telegramConnectButton.hidden = false;
+    telegramConnectButton.textContent = "Gerar novo código";
+    // Só anuncia por aria-live se a aba Lembretes estiver visível agora; se a pessoa
+    // estiver em outra seção, o estado é atualizado em silêncio e ela vê ao voltar.
+    setTelegramStatusText(
+        "Código expirado. Gere um novo código para concluir o vínculo.",
+        { announce: activeView === "reminders" }
+    );
+}
+
+// O cronômetro roda em qualquer seção do app, não só em Lembretes: o tempo restante
+// é sempre recalculado a partir de expiresAt (nunca de um contador decrescente), e a
+// classe garante no máximo um setInterval ativo por vez (ver telegramLinkCountdown.js).
+const telegramCountdown = new TelegramLinkCountdownTimer({
+    onTick: (remainingMs) => {
+        // Sem aria-live aqui de propósito: o tempo restante não pode ser anunciado a cada segundo.
+        telegramCountdownEl.textContent = `Expira em ${formatCountdown(remainingMs)}`;
+        telegramCountdownEl.classList.toggle("urgent", isCountdownUrgent(remainingMs));
+    },
+    onExpired: handleTelegramCodeExpired
+});
+
+function renderTelegramCode({ code, expiresAt, telegramLink }) {
+    telegramCodeValue.textContent = code;
+    telegramCodeBox.hidden = false;
+    telegramCopyButton.hidden = false;
+    telegramRegenerateButton.hidden = false;
+    telegramConnectButton.hidden = true;
+    telegramConnectButton.textContent = TELEGRAM_CONNECT_DEFAULT_LABEL;
+    telegramOpenLink.hidden = !telegramLink;
+    if (telegramLink) telegramOpenLink.href = telegramLink;
+    telegramCountdown.start(expiresAt);
+}
+
+function restoreTelegramCodeFromStorage() {
+    const stored = readStoredTelegramLinkCode();
+    if (!stored) return;
+    if (isCountdownExpired(getRemainingMs(stored.expiresAt, Date.now()))) {
+        clearStoredTelegramLinkCode();
+        return;
+    }
+    renderTelegramCode(stored);
+}
 
 function renderTelegramLinked(linked) {
     telegramStatus.dataset.state = linked ? "linked" : "";
@@ -1139,32 +1255,37 @@ function renderTelegramLinked(linked) {
         ? "Telegram conectado. Você já pode enviar perguntas sobre bulas pelo bot."
         : "Vincule sua conta para consultar bulas também pelo Telegram.";
     telegramConnectButton.hidden = linked;
+    telegramConnectButton.textContent = TELEGRAM_CONNECT_DEFAULT_LABEL;
     telegramDisconnectButton.hidden = !linked;
     if (linked) {
         telegramCodeBox.hidden = true;
         telegramOpenLink.hidden = true;
+        telegramCountdown.stop();
+        clearStoredTelegramLinkCode();
     }
 }
 
-async function generateTelegramLinkCode() {
+async function generateTelegramLinkCode(isRegeneration = false) {
     telegramConnectButton.disabled = true;
+    telegramRegenerateButton.disabled = true;
     try {
         const response = await authenticatedFetch("/api/telegram/link-code", { method: "POST" });
         if (!response.ok) throw new Error(await readError(response, "Não foi possível gerar o código de vínculo."));
         const data = await response.json();
-        if (!data || typeof data.code !== "string" || typeof data.telegramLink !== "string") {
+        if (!data || typeof data.code !== "string" || typeof data.telegramLink !== "string" || typeof data.expiresAt !== "string") {
             throw new Error("Resposta inesperada ao gerar o código de vínculo.");
         }
-        telegramCodeValue.textContent = data.code;
-        telegramCodeBox.hidden = false;
-        telegramOpenLink.href = data.telegramLink;
-        telegramOpenLink.hidden = false;
-        telegramStatus.textContent = "Envie esse código para o bot no Telegram (ou abra o link) para concluir o vínculo.";
+        renderTelegramCode(data);
+        storeTelegramLinkCode(data.code, data.expiresAt, data.telegramLink);
+        telegramStatus.textContent = isRegeneration
+            ? "Novo código gerado. O anterior deixou de valer."
+            : "Envie esse código para o bot no Telegram (ou abra o link) para concluir o vínculo.";
         track("telegram_link_generated");
     } catch (error) {
         telegramStatus.textContent = error instanceof Error ? error.message : "Não foi possível gerar o código de vínculo.";
     } finally {
         telegramConnectButton.disabled = false;
+        telegramRegenerateButton.disabled = false;
     }
 }
 
@@ -1199,6 +1320,8 @@ async function disconnectTelegram() {
         const response = await authenticatedFetch("/api/telegram/link", { method: "DELETE" });
         if (!response.ok) throw new Error(await readError(response, "Não foi possível desvincular o Telegram."));
         renderTelegramLinked(false);
+        telegramCountdown.stop();
+        clearStoredTelegramLinkCode();
         track("telegram_unlinked");
     } catch (error) {
         telegramStatus.textContent = error instanceof Error ? error.message : "Não foi possível desvincular o Telegram.";
@@ -1207,7 +1330,8 @@ async function disconnectTelegram() {
     }
 }
 
-telegramConnectButton.addEventListener("click", generateTelegramLinkCode);
+telegramConnectButton.addEventListener("click", () => generateTelegramLinkCode(false));
+telegramRegenerateButton.addEventListener("click", () => generateTelegramLinkCode(true));
 telegramCopyButton.addEventListener("click", copyTelegramCode);
 telegramRefreshButton.addEventListener("click", refreshTelegramLinkStatus);
 telegramDisconnectButton.addEventListener("click", disconnectTelegram);
@@ -1417,6 +1541,14 @@ function setView(view) {
     activeView = view;
     trackPageView(view);
 }
+
+// Navegadores reduzem a frequência de timers em abas em segundo plano: ao voltar a
+// ficar visível (troca de aba do navegador ou restauração via bfcache), recalcula o
+// cronômetro do Telegram na hora por expiresAt, sem esperar o próximo segundo.
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") telegramCountdown.tick();
+});
+window.addEventListener("pageshow", () => telegramCountdown.tick());
 
 document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => {
     setView(button.dataset.view);

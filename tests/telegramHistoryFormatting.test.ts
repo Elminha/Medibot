@@ -66,6 +66,22 @@ test("offset além do fim também produz lista vazia, com mensagem distinta", ()
     assert.match(formatHistoryListMessage(page), /Não há mais consultas/);
 });
 
+test("formatHistoryListMessage nunca tem 3+ quebras de linha seguidas nem começa/termina com quebra de linha", () => {
+    const entries = Array.from({ length: 7 }, (_, index) => makeEntry(index + 1));
+    const pages = [
+        paginateHistory(entries, 0), // primeira página (5 itens, tem "Ver mais")
+        paginateHistory(entries, HISTORY_PAGE_SIZE), // segunda página (2 itens, tem "Anterior")
+        paginateHistory([], 0) // lista vazia
+    ];
+
+    for (const page of pages) {
+        const message = formatHistoryListMessage(page);
+        assert.doesNotMatch(message, /\n{3,}/, `página com offset ${page.offset} tem linhas em branco extras`);
+        assert.doesNotMatch(message, /^\n/);
+        assert.doesNotMatch(message, /\n$/);
+    }
+});
+
 test("truncateText corta em 40 caracteres sem quebrar um caractere multi-byte", () => {
     const withEmoji = `${"a".repeat(39)}🙂resto`;
     const truncated = truncateText(withEmoji, 40);
