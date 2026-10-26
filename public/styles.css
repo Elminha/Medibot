@@ -186,9 +186,11 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .sidebar-account { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--border); padding-top: 13px; color: var(--text-muted); font-size: .83rem; }
 .sidebar-account > span:nth-child(2) { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; }
 .user-avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--primary-soft-strong); color: var(--primary); font-weight: 750; flex: none; }
+.sidebar-privacy-link { margin: 0; border: 0; background: transparent; padding: 4px; color: var(--text-muted); font-size: .74rem; text-align: left; cursor: pointer; }
+.sidebar-privacy-link:hover { color: var(--primary); text-decoration: underline; }
 
 .sidebar.collapsed { width: 76px; flex-basis: 76px; padding-right: 10px; padding-left: 10px; }
-.sidebar.collapsed .sidebar-brand > span, .sidebar.collapsed .new-chat-button > span:last-child, .sidebar.collapsed .nav-button > span:last-child, .sidebar.collapsed .theme-toggle-label, .sidebar.collapsed .sidebar-account > span:nth-child(2) { display: none; }
+.sidebar.collapsed .sidebar-brand > span, .sidebar.collapsed .new-chat-button > span:last-child, .sidebar.collapsed .nav-button > span:last-child, .sidebar.collapsed .theme-toggle-label, .sidebar.collapsed .sidebar-account > span:nth-child(2), .sidebar.collapsed .sidebar-privacy-link { display: none; }
 .sidebar.collapsed .new-chat-button, .sidebar.collapsed .nav-button, .sidebar.collapsed .theme-toggle { justify-content: center; padding: 0; }
 .sidebar.collapsed .sidebar-brand { justify-content: center; }
 .sidebar.collapsed .sidebar-brand .brand-mark { display: none; }
@@ -362,7 +364,7 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
     .sidebar { position: fixed; z-index: 10; top: 0; bottom: 0; left: 0; width: min(290px, 84vw); transform: translateX(-105%); box-shadow: none; transition: transform .2s; }
     .sidebar.collapsed { width: min(290px, 84vw); flex-basis: auto; padding: 18px 14px 14px; }
     .sidebar.collapsed .sidebar-brand { justify-content: flex-start; }
-    .sidebar.collapsed .sidebar-brand > span, .sidebar.collapsed .new-chat-button > span:last-child, .sidebar.collapsed .nav-button > span:last-child, .sidebar.collapsed .theme-toggle-label, .sidebar.collapsed .sidebar-account > span:nth-child(2) { display: revert; }
+    .sidebar.collapsed .sidebar-brand > span, .sidebar.collapsed .new-chat-button > span:last-child, .sidebar.collapsed .nav-button > span:last-child, .sidebar.collapsed .theme-toggle-label, .sidebar.collapsed .sidebar-account > span:nth-child(2), .sidebar.collapsed .sidebar-privacy-link { display: revert; }
     .sidebar.collapsed .sidebar-brand .brand-mark { display: grid; }
     .sidebar.collapsed .new-chat-button, .sidebar.collapsed .nav-button, .sidebar.collapsed .theme-toggle { justify-content: flex-start; padding: 0 12px; }
     .sidebar.mobile-open { transform: translateX(0); box-shadow: 10px 0 40px rgba(0, 0, 0, .25); }
@@ -386,4 +388,21 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 }
 @media (max-width: 480px) {
     .auth-card { padding: 24px; }
+}
+
+/* ===== Cookie consent banner ===== */
+.cookie-banner {
+    position: fixed; z-index: 100; left: 50%; bottom: 18px; transform: translateX(-50%);
+    width: min(calc(100% - 32px), 620px); display: flex; flex-direction: column; gap: 12px;
+    border: 1px solid var(--border-soft); border-radius: var(--radius-lg);
+    background: var(--surface); box-shadow: var(--shadow-lg); padding: 18px 20px;
+}
+.cookie-banner p { margin: 0; color: var(--text); font-size: .86rem; line-height: 1.5; }
+.cookie-banner-hint { color: var(--text-muted) !important; font-size: .78rem !important; }
+.cookie-banner-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.cookie-banner[hidden] { display: none !important; }
+@media (max-width: 480px) {
+    .cookie-banner { bottom: 10px; width: calc(100% - 20px); padding: 16px; }
+    .cookie-banner-actions { flex-direction: column-reverse; }
+    .cookie-banner-actions button { width: 100%; }
 }

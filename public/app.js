@@ -54,8 +54,115 @@ applyTheme(getPreferredTheme());
 
 themeToggleButton?.addEventListener("click", () => {
     const current = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
-    setTheme(current === "dark" ? "light" : "dark");
+    const next = current === "dark" ? "light" : "dark";
+    setTheme(next);
+    track("theme_change", { theme: next === "dark" ? "escuro" : "claro" });
 });
+
+// ===== Google Analytics (consentimento obrigatório) =====
+const GA_MEASUREMENT_ID = "G-8RZ35N1DTJ";
+const cookieConsentStorageKey = "medibot_cookie_consent";
+const cookieBanner = document.querySelector("#cookie-banner");
+const cookieBannerHint = document.querySelector("#cookie-banner-hint");
+const cookieAcceptButton = document.querySelector("#cookie-accept");
+const cookieRejectButton = document.querySelector("#cookie-reject");
+const privacyCookiesLink = document.querySelector("#privacy-cookies-link");
+const viewPageMeta = {
+    chat: { title: "Conversar", path: "/conversar" },
+    history: { title: "Histórico", path: "/historico" },
+    medications: { title: "Medicamentos", path: "/medicamentos" },
+    reminders: { title: "Lembretes", path: "/lembretes" }
+};
+let gaActive = false;
+let activeView = "chat";
+
+function getStoredConsent() {
+    try {
+        const value = window.localStorage.getItem(cookieConsentStorageKey);
+        return value === "accepted" || value === "rejected" ? value : null;
+    } catch {
+        return null;
+    }
+}
+
+function storeConsent(value) {
+    try {
+        window.localStorage.setItem(cookieConsentStorageKey, value);
+    } catch {
+        // ignore storage access errors
+    }
+}
+
+function loadGoogleAnalytics() {
+    if (gaActive) return;
+    gaActive = true;
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function gtag() { window.dataLayer.push(arguments); };
+    window.gtag("js", new Date());
+    window.gtag("config", GA_MEASUREMENT_ID, { send_page_view: false, anonymize_ip: true });
+    const script = document.createElement("script");
+    script.async = true;
+    script.src = `https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`;
+    document.head.append(script);
+    if (!authenticatedApp.hidden) trackPageView(activeView);
+}
+
+function track(eventName, params = {}) {
+    if (!gaActive || typeof window.gtag !== "function") return;
+    window.gtag("event", eventName, params);
+}
+
+function trackPageView(view) {
+    const meta = viewPageMeta[view];
+    if (!meta || !gaActive || typeof window.gtag !== "function") return;
+    window.gtag("event", "page_view", {
+        page_title: meta.title,
+        page_location: `${window.location.origin}${meta.path}`,
+        page_path: meta.path
+    });
+}
+
+function hideCookieBanner() {
+    if (cookieBanner) cookieBanner.hidden = true;
+}
+
+function showCookieBanner() {
+    if (cookieBanner) cookieBanner.hidden = false;
+}
+
+function initCookieConsent() {
+    const stored = getStoredConsent();
+    if (stored === "accepted") {
+        loadGoogleAnalytics();
+        hideCookieBanner();
+    } else if (stored === "rejected") {
+        hideCookieBanner();
+    } else {
+        showCookieBanner();
+    }
+}
+
+cookieAcceptButton?.addEventListener("click", () => {
+    storeConsent("accepted");
+    hideCookieBanner();
+    loadGoogleAnalytics();
+});
+
+cookieRejectButton?.addEventListener("click", () => {
+    const hadAccepted = getStoredConsent() === "accepted";
+    storeConsent("rejected");
+    gaActive = false;
+    hideCookieBanner();
+    if (hadAccepted) window.location.reload();
+});
+
+privacyCookiesLink?.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (cookieBannerHint) cookieBannerHint.hidden = getStoredConsent() !== "accepted";
+    showCookieBanner();
+});
+
+initCookieConsent();
 
 const emptyStateIcons = {
     medication: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg>',
@@ -261,6 +368,7 @@ async function sendQuestion(question) {
     }
 
     addMessage(trimmedQuestion, "user");
+    track("ask_question");
     document.querySelector(".suggestions").hidden = true;
     questionInput.value = "";
     setWaiting(true);
@@ -592,6 +700,7 @@ medicationForm.addEventListener("submit", async (event) => {
         medicationForm.reset();
         medicationNameInput.setAttribute("aria-invalid", "false");
         setMedicationFeedback("Medicamento adicionado com sucesso.", "success");
+        track("medication_added");
         await Promise.all([loadMedications(), loadReminders()]);
         medicationNameInput.focus();
     } catch (error) {
@@ -1003,6 +1112,7 @@ reminderForm.addEventListener("submit", async (event) => {
         reminderForm.reset();
         reminderActiveInput.checked = true;
         setReminderFeedback("Lembrete adicionado com sucesso.", "success");
+        track("reminder_created");
         await loadReminders();
         reminderMedicationInput.focus();
     } catch (error) {
@@ -1048,6 +1158,7 @@ async function generateTelegramLinkCode() {
         telegramOpenLink.href = data.telegramLink;
         telegramOpenLink.hidden = false;
         telegramStatus.textContent = "Envie esse código para o bot no Telegram (ou abra o link) para concluir o vínculo.";
+        track("telegram_link_generated");
     } catch (error) {
         telegramStatus.textContent = error instanceof Error ? error.message : "Não foi possível gerar o código de vínculo.";
     } finally {
@@ -1086,6 +1197,7 @@ async function disconnectTelegram() {
         const response = await authenticatedFetch("/api/telegram/link", { method: "DELETE" });
         if (!response.ok) throw new Error(await readError(response, "Não foi possível desvincular o Telegram."));
         renderTelegramLinked(false);
+        track("telegram_unlinked");
     } catch (error) {
         telegramStatus.textContent = error instanceof Error ? error.message : "Não foi possível desvincular o Telegram.";
     } finally {
@@ -1222,11 +1334,16 @@ function setView(view) {
     document.querySelector(".reminders-panel").hidden = view !== "reminders";
     document.querySelector(".safety-note").hidden = view !== "chat";
     document.querySelector("#sidebar").classList.remove("mobile-open");
+    activeView = view;
+    trackPageView(view);
 }
 
 document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => {
     setView(button.dataset.view);
-    if (button.dataset.view === "history") loadQueryHistory();
+    if (button.dataset.view === "history") {
+        loadQueryHistory();
+        track("history_open");
+    }
 }));
 document.querySelector("#new-chat-button").addEventListener("click", () => {
     messages.replaceChildren();
@@ -1265,6 +1382,7 @@ loginForm.addEventListener("submit", async (event) => {
         if (!data?.token || !data?.user) throw new Error("Resposta inesperada ao entrar.");
         window.localStorage.setItem(authTokenStorageKey, data.token);
         loginForm.reset();
+        track("login", { method: identifier.includes("@") ? "email" : "phone" });
         showApplication(data.user);
     } catch (error) {
         loginFeedback.textContent = error instanceof Error ? error.message : "Não foi possível entrar.";
@@ -1292,6 +1410,7 @@ registerForm.addEventListener("submit", async (event) => {
         });
         if (!response.ok) throw new Error(await readError(response, "Não foi possível criar a conta."));
         registerForm.reset();
+        track("sign_up", { method: email ? "email" : "phone" });
         showLogin("Conta criada com sucesso. Agora entre com seu e-mail ou telefone e senha.", true);
     } catch (error) {
         registerFeedback.textContent = error instanceof Error ? error.message : "Não foi possível criar a conta.";

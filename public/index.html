@@ -97,6 +97,7 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
                 </button>
             </div>
+            <button type="button" class="sidebar-privacy-link" id="privacy-cookies-link">Privacidade e cookies</button>
         </aside>
         <div class="app-main">
         <header class="app-header">
@@ -253,6 +254,16 @@
         <p class="safety-note">Informação educativa baseada nas bulas disponíveis no sistema. O MediBot não realiza diagnóstico, não prescreve medicamentos e não substitui a orientação de um profissional de saúde.</p>
         </div>
     </main>
+
+    <div class="cookie-banner" id="cookie-banner" role="dialog" aria-label="Consentimento de cookies" hidden>
+        <p>Usamos o Google Analytics para entender como o MediBot é usado (páginas acessadas e ações gerais). Não coletamos o conteúdo das suas perguntas.</p>
+        <p class="cookie-banner-hint" id="cookie-banner-hint" hidden>Mudar para "Recusar" pode exigir recarregar a página para interromper o envio de dados.</p>
+        <div class="cookie-banner-actions">
+            <button type="button" class="secondary-button" id="cookie-reject">Recusar</button>
+            <button type="button" class="primary-button" id="cookie-accept">Aceitar</button>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
     <script src="/app.js" type="module"></script>
