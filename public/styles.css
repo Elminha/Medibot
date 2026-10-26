@@ -391,9 +391,10 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 }
 
 /* ===== Cookie consent banner ===== */
+/* bottom offset clears the chat composer (~86-90px tall incl. its margin), regardless of viewport width */
 .cookie-banner {
-    position: fixed; z-index: 100; left: 50%; bottom: 18px; transform: translateX(-50%);
-    width: min(calc(100% - 32px), 620px); display: flex; flex-direction: column; gap: 12px;
+    position: fixed; z-index: 100; right: 20px; bottom: 112px; left: auto;
+    width: min(340px, calc(100% - 40px)); display: flex; flex-direction: column; gap: 12px;
     border: 1px solid var(--border-soft); border-radius: var(--radius-lg);
     background: var(--surface); box-shadow: var(--shadow-lg); padding: 18px 20px;
 }
@@ -402,7 +403,7 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .cookie-banner-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .cookie-banner[hidden] { display: none !important; }
 @media (max-width: 480px) {
-    .cookie-banner { bottom: 10px; width: calc(100% - 20px); padding: 16px; }
+    .cookie-banner { right: 10px; left: 10px; bottom: 112px; width: auto; padding: 16px; }
     .cookie-banner-actions { flex-direction: column-reverse; }
     .cookie-banner-actions button { width: 100%; }
 }
