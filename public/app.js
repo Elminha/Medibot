@@ -1291,7 +1291,7 @@ async function generateTelegramLinkCode(isRegeneration = false) {
         storeTelegramLinkCode(data.code, data.expiresAt, data.telegramLink);
         telegramStatus.textContent = isRegeneration
             ? "Novo código gerado. O anterior deixou de valer."
-            : "Envie esse código para o bot no Telegram (ou abra o link) para concluir o vínculo.";
+            : "Envie esse código para o bot no Telegram (ou clique no botão 'Abrir no Telegram') para concluir o vínculo.";
         track("telegram_link_generated");
     } catch (error) {
         telegramStatus.textContent = error instanceof Error ? error.message : "Não foi possível gerar o código de vínculo.";
