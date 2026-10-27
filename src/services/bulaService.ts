@@ -1,6 +1,13 @@
 import { getVectorStoreId, model, openai } from "../config.js";
+import { isPersonalDoseQuestion } from "./doseQuestionDetector.js";
 
 const ANSWER_NOT_FOUND = "Essa informação não foi encontrada nas bulas disponíveis no sistema.";
+
+const PERSONAL_DOSE_REFUSAL = [
+    "O MediBot é educativo e não calcula nem indica doses, quantidades ou intervalos de uso para uma pessoa específica, especialmente crianças.",
+    "A dose correta depende da idade, do peso e da saúde de cada pessoa, então procure um médico ou farmacêutico e consulte a bula do produto que você tem em mãos.",
+    "Posso ajudar explicando outras informações da bula, como para que serve, contraindicações e efeitos colaterais."
+].join(" ");
 
 const instructions = [
     "Você é o MediBot, um assistente educativo que responde exclusivamente com base nas bulas de medicamentos disponíveis no sistema.",
@@ -17,7 +24,8 @@ const instructions = [
     "Se a mensagem do usuário for apenas uma saudação, um agradecimento ou uma conversa social, sem pergunta sobre um medicamento, responda de forma breve e natural, sem consultar as bulas e sem usar a busca interna.",
     "Quando houver trocas anteriores desta mesma conversa fornecidas como contexto, use-as para entender perguntas de acompanhamento (por exemplo, 'e esse medicamento serve para dor de cabeça também?'). Se o usuário perguntar de onde veio uma resposta anterior ou qual é a fonte dela, responda citando as fontes indicadas junto a essa resposta anterior no contexto, em vez de dizer que não tem acesso ao histórico.",
     "Organize a resposta em tópicos quando isso melhorar a compreensão.",
-    `Se a informação solicitada não estiver nos trechos recuperados, responda exatamente: '${ANSWER_NOT_FOUND}'`
+    `Se a informação solicitada não estiver nos trechos recuperados, responda exatamente: '${ANSWER_NOT_FOUND}'`,
+    "Nunca informe doses, quantidades, gotas, miligramas, frequência ou intervalos de uso para uma pessoa, mesmo que a bula tenha uma tabela por peso ou idade: nunca escolha uma linha dessa tabela para o caso do usuário. Nesses casos, explique que não pode fazer isso e oriente a pessoa a procurar um médico ou farmacêutico."
 ].join(" ");
 
 export interface ConsultaBulaResultado {
@@ -105,8 +113,20 @@ export async function consultarBula(
         throw new Error("A pergunta para consultar a bula é obrigatória.");
     }
 
+    if (isPersonalDoseQuestion(question)) {
+        return {
+            answer: PERSONAL_DOSE_REFUSAL,
+            sources: [],
+            usedFileSearch: false
+        };
+    }
+
+    // Perguntas de dose bloqueadas anteriores não devem continuar no contexto enviado ao
+    // modelo, mesmo que já estejam salvas no histórico (queries) com a resposta fixa.
+    const safeHistory = (options.history ?? []).filter((turn) => !isPersonalDoseQuestion(turn.question));
+
     const vectorStoreId = getVectorStoreId(options.vectorStoreId);
-    const input = buildConversationInput(options.history ?? [], question);
+    const input = buildConversationInput(safeHistory, question);
 
     const response = await openai.responses.create({
         model,

@@ -124,3 +124,41 @@ test("consultarBula não marca usedFileSearch em respostas de conversa social (s
     assert.deepEqual(resultado.sources, []);
     assert.equal(resultado.usedFileSearch, false);
 });
+
+test("consultarBula bloqueia pergunta de dose pessoal sem chamar a OpenAI", async () => {
+    const createMock = mock.method(openai.responses, "create", async () => {
+        throw new Error("openai.responses.create não deveria ser chamado para pergunta de dose pessoal");
+    });
+
+    const resultado = await consultarBula("qual a dose de dipirona pro meu filho de 10 kg?");
+
+    assert.equal(createMock.mock.callCount(), 0);
+    assert.deepEqual(resultado.sources, []);
+    assert.equal(resultado.usedFileSearch, false);
+    assert.match(resultado.answer, /não calcula nem indica doses/);
+});
+
+test("consultarBula remove do histórico perguntas de dose pessoal antes de consultar o modelo", async () => {
+    mockResponseOnce({
+        output_text: "O ibuprofeno é um anti-inflamatório.",
+        output: [
+            { type: "message", content: [{ type: "output_text", text: "O ibuprofeno é um anti-inflamatório.", annotations: [] }] }
+        ]
+    });
+
+    const historicoComPerguntaBloqueada = [
+        {
+            question: "qual a dose de dipirona pro meu filho de 10 kg?",
+            answer: "O MediBot é educativo e não calcula nem indica doses...",
+            sources: []
+        }
+    ];
+
+    await consultarBula("o que é ibuprofeno?", { history: historicoComPerguntaBloqueada });
+
+    const chamada = (openai.responses.create as unknown as ReturnType<typeof mock.method>).mock.calls[0];
+    const input = (chamada.arguments[0] as { input: Array<{ content: string }> }).input;
+
+    assert.equal(input.length, 1);
+    assert.deepEqual(input[0], { role: "user", content: "o que é ibuprofeno?" });
+});
