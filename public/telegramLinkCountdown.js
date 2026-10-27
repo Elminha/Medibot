@@ -2,6 +2,7 @@
 // Isoladas num módulo próprio para serem testáveis sem DOM/timers (tests/telegramLinkCountdown.test.js).
 
 export const COUNTDOWN_URGENT_THRESHOLD_MS = 60_000;
+export const COUNTDOWN_CRITICAL_THRESHOLD_MS = 10_000;
 
 /**
  * Tempo restante até `expiresAt` (ISO 8601), em milissegundos. Pode ser negativo
@@ -29,6 +30,23 @@ export function formatCountdown(remainingMs) {
 /** true nos últimos COUNTDOWN_URGENT_THRESHOLD_MS (padrão 60s) antes de expirar. */
 export function isCountdownUrgent(remainingMs, thresholdMs = COUNTDOWN_URGENT_THRESHOLD_MS) {
     return Number.isFinite(remainingMs) && remainingMs > 0 && remainingMs <= thresholdMs;
+}
+
+/**
+ * Nível visual de urgência do tempo restante: "normal" (acima de 60s), "urgent"
+ * (de 60s até 11s) ou "critical" (últimos 10s). Valores inválidos ou já expirados
+ * (NaN, zero, negativo) caem em "critical" — quem chama decide se exibe ou não,
+ * já que isCountdownExpired() é quem define o estado "expirado" de fato.
+ */
+export function getCountdownLevel(
+    remainingMs,
+    urgentThresholdMs = COUNTDOWN_URGENT_THRESHOLD_MS,
+    criticalThresholdMs = COUNTDOWN_CRITICAL_THRESHOLD_MS
+) {
+    if (!Number.isFinite(remainingMs) || remainingMs <= 0) return "critical";
+    if (remainingMs <= criticalThresholdMs) return "critical";
+    if (remainingMs <= urgentThresholdMs) return "urgent";
+    return "normal";
 }
 
 /**

@@ -4,9 +4,9 @@ import {
 } from "./reminderNotifications.js";
 import {
     formatCountdown,
+    getCountdownLevel,
     getRemainingMs,
     isCountdownExpired,
-    isCountdownUrgent,
     parseStoredLinkCode,
     TelegramLinkCountdownTimer
 } from "./telegramLinkCountdown.js";
@@ -1141,6 +1141,7 @@ const telegramCodeValue = document.querySelector("#telegram-code-value");
 const telegramCopyButton = document.querySelector("#telegram-copy-button");
 const telegramRegenerateButton = document.querySelector("#telegram-regenerate-button");
 const telegramCountdownEl = document.querySelector("#telegram-countdown");
+const telegramCodeRow = document.querySelector("#telegram-code-row");
 const telegramRefreshButton = document.querySelector("#telegram-refresh-button");
 const telegramOpenLink = document.querySelector("#telegram-open-link");
 const telegramConnectButton = document.querySelector("#telegram-connect-button");
@@ -1199,14 +1200,18 @@ function setTelegramStatusText(text, { announce = true } = {}) {
 
 function handleTelegramCodeExpired() {
     clearStoredTelegramLinkCode();
-    telegramCodeValue.textContent = "Código expirado";
+    // A linha "Código: ..." some por completo: a mensagem de status abaixo já diz
+    // "Código expirado", então mantê-la visível só duplicaria a informação.
+    telegramCodeRow.hidden = true;
+    telegramCodeValue.textContent = "";
     telegramCountdownEl.textContent = "";
-    telegramCountdownEl.classList.remove("urgent");
+    delete telegramCountdownEl.dataset.level;
     telegramCopyButton.hidden = true;
     telegramRegenerateButton.hidden = true;
     telegramOpenLink.hidden = true;
     telegramConnectButton.hidden = false;
     telegramConnectButton.textContent = "Gerar novo código";
+    telegramStatus.dataset.state = "expired";
     // Só anuncia por aria-live se a aba Lembretes estiver visível agora; se a pessoa
     // estiver em outra seção, o estado é atualizado em silêncio e ela vê ao voltar.
     setTelegramStatusText(
@@ -1222,12 +1227,14 @@ const telegramCountdown = new TelegramLinkCountdownTimer({
     onTick: (remainingMs) => {
         // Sem aria-live aqui de propósito: o tempo restante não pode ser anunciado a cada segundo.
         telegramCountdownEl.textContent = `Expira em ${formatCountdown(remainingMs)}`;
-        telegramCountdownEl.classList.toggle("urgent", isCountdownUrgent(remainingMs));
+        telegramCountdownEl.dataset.level = getCountdownLevel(remainingMs);
     },
     onExpired: handleTelegramCodeExpired
 });
 
 function renderTelegramCode({ code, expiresAt, telegramLink }) {
+    telegramCodeRow.hidden = false;
+    telegramStatus.dataset.state = "";
     telegramCodeValue.textContent = code;
     telegramCodeBox.hidden = false;
     telegramCopyButton.hidden = false;

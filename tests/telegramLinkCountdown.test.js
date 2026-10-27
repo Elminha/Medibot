@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
     COUNTDOWN_URGENT_THRESHOLD_MS,
+    COUNTDOWN_CRITICAL_THRESHOLD_MS,
     formatCountdown,
+    getCountdownLevel,
     getRemainingMs,
     isCountdownExpired,
     isCountdownUrgent,
@@ -64,6 +66,17 @@ test("isCountdownUrgent: true só nos últimos 60s antes de expirar, exclui o pr
     assert.equal(isCountdownUrgent(0), false);
     assert.equal(isCountdownUrgent(-1000), false);
     assert.equal(isCountdownUrgent(NaN), false);
+});
+
+test("getCountdownLevel: normal acima de 60s, urgent de 60s a 11s, critical nos últimos 10s", () => {
+    assert.equal(getCountdownLevel(COUNTDOWN_URGENT_THRESHOLD_MS + 1), "normal"); // 61s
+    assert.equal(getCountdownLevel(COUNTDOWN_URGENT_THRESHOLD_MS), "urgent"); // 60s, no limite exato
+    assert.equal(getCountdownLevel(11_000), "urgent"); // 11s
+    assert.equal(getCountdownLevel(COUNTDOWN_CRITICAL_THRESHOLD_MS), "critical"); // 10s, no limite exato
+    assert.equal(getCountdownLevel(1_000), "critical"); // 1s
+    assert.equal(getCountdownLevel(0), "critical");
+    assert.equal(getCountdownLevel(-1_000), "critical");
+    assert.equal(getCountdownLevel(NaN), "critical");
 });
 
 test("parseStoredLinkCode aceita um objeto válido, com e sem telegramLink", () => {

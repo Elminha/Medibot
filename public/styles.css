@@ -368,9 +368,11 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .icon-text-button { display: inline-flex; align-items: center; gap: 6px; }
 .icon-text-button svg { width: 15px; height: 15px; flex: none; }
 .telegram-countdown { margin: 6px 0 0; color: var(--text-muted); font-size: .84rem; font-weight: 650; font-variant-numeric: tabular-nums; }
-.telegram-countdown.urgent { color: var(--warning-text); }
+.telegram-countdown[data-level="urgent"] { color: var(--warning-text); }
+.telegram-countdown[data-level="critical"] { color: var(--danger); font-weight: 700; }
 .telegram-countdown:empty { display: none; }
 #telegram-status[data-state="linked"] { color: var(--primary); }
+#telegram-status[data-state="expired"] { color: var(--danger); }
 #telegram-open-link { text-decoration: none; }
 
 @media (max-width: 760px) {
