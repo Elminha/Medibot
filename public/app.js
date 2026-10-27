@@ -1142,6 +1142,7 @@ const telegramCopyButton = document.querySelector("#telegram-copy-button");
 const telegramRegenerateButton = document.querySelector("#telegram-regenerate-button");
 const telegramCountdownEl = document.querySelector("#telegram-countdown");
 const telegramCodeRow = document.querySelector("#telegram-code-row");
+const telegramCodeHint = document.querySelector("#telegram-code-hint");
 const telegramRefreshButton = document.querySelector("#telegram-refresh-button");
 const telegramOpenLink = document.querySelector("#telegram-open-link");
 const telegramConnectButton = document.querySelector("#telegram-connect-button");
@@ -1206,6 +1207,9 @@ function handleTelegramCodeExpired() {
     telegramCodeValue.textContent = "";
     telegramCountdownEl.textContent = "";
     delete telegramCountdownEl.dataset.level;
+    // A dica "código expira em 10 minutos" só faz sentido com um código ativo; some
+    // junto com a linha do código.
+    telegramCodeHint.hidden = true;
     telegramCopyButton.hidden = true;
     telegramRegenerateButton.hidden = true;
     telegramOpenLink.hidden = true;
@@ -1234,6 +1238,7 @@ const telegramCountdown = new TelegramLinkCountdownTimer({
 
 function renderTelegramCode({ code, expiresAt, telegramLink }) {
     telegramCodeRow.hidden = false;
+    telegramCodeHint.hidden = false;
     telegramStatus.dataset.state = "";
     telegramCodeValue.textContent = code;
     telegramCodeBox.hidden = false;
