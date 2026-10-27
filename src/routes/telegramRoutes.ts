@@ -11,10 +11,34 @@ import {
 
 const telegramRoutes = Router();
 
+const DEFAULT_WEBHOOK_TIMEOUT_MS = 45_000;
+
+export function getWebhookTimeoutMs(): number {
+    const configured = Number(process.env.TELEGRAM_WEBHOOK_TIMEOUT_MS);
+    return configured > 0 ? configured : DEFAULT_WEBHOOK_TIMEOUT_MS;
+}
+
 function isValidWebhookRequest(request: Request): boolean {
     const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
     const providedSecret = request.header("x-telegram-bot-api-secret-token");
     return Boolean(expectedSecret) && providedSecret === expectedSecret;
+}
+
+type ExpressWebhookHandler = (request: Request, response: Response) => Promise<void>;
+
+// Criado uma única vez (não a cada request): webhookCallback chama bot.init() só na
+// primeira invocação do callback retornado; recriá-lo por request forçaria um getMe()
+// a cada mensagem, consumindo parte do orçamento de tempo do timeout abaixo.
+let handleUpdate: ExpressWebhookHandler | undefined;
+
+function getWebhookHandler(): ExpressWebhookHandler {
+    if (!handleUpdate) {
+        handleUpdate = webhookCallback(getTelegramBot(), "express", {
+            onTimeout: "throw",
+            timeoutMilliseconds: getWebhookTimeoutMs()
+        }) as ExpressWebhookHandler;
+    }
+    return handleUpdate;
 }
 
 telegramRoutes.post("/webhook", async (request: Request, response: Response) => {
@@ -24,8 +48,7 @@ telegramRoutes.post("/webhook", async (request: Request, response: Response) => 
     }
 
     try {
-        const handleUpdate = webhookCallback(getTelegramBot(), "express");
-        await handleUpdate(request, response);
+        await getWebhookHandler()(request, response);
     } catch (error) {
         console.error("Falha ao processar atualização do Telegram.", error);
         if (!response.headersSent) {

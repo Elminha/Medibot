@@ -19,7 +19,7 @@ import {
     TelegramConfigurationError,
     unlinkChat
 } from "./telegramLinkService.js";
-import { registerUpdateOnce } from "./telegramUpdateLog.js";
+import { claimUpdateForProcessing, markUpdateDone, releaseUpdateForRetry } from "./telegramUpdateLog.js";
 import {
     escapeTelegramHtml,
     markdownToTelegramHtml,
@@ -70,6 +70,11 @@ const NOT_LINKED_MESSAGE =
 
 const RATE_LIMITED_MESSAGE =
     "Você atingiu o limite de perguntas por hora. Tente novamente mais tarde.";
+
+export const PROCESSING_ERROR_MESSAGE =
+    "Tive um problema para responder agora. Pode enviar sua pergunta de novo?";
+
+export const TYPING_INDICATOR_INTERVAL_MS = 4_000;
 
 const GROUP_CHAT_HISTORY_MESSAGE = "Por privacidade, use /historico em uma conversa privada comigo.";
 const GROUP_CHAT_DELETE_MESSAGE = "Por privacidade, use /apagar em uma conversa privada comigo.";
@@ -126,6 +131,23 @@ async function replyWithHtmlFallback(
         console.error("Falha ao enviar mensagem formatada no Telegram; reenviando como texto simples.", error);
         await ctx.reply(stripHtml(html), extra);
     }
+}
+
+/**
+ * Mantém o indicador "digitando" renovado enquanto o processamento (ex.: chamada à
+ * OpenAI) ainda não terminou — a ação do Telegram dura só ~5s por chamada. O timer é
+ * escopado à própria invocação (nunca em módulo) e sempre limpo pelo chamador em um
+ * `finally`, então não acumula entre invocações.
+ */
+export function startTypingIndicator(ctx: Context): NodeJS.Timeout {
+    void ctx.replyWithChatAction("typing").catch(() => undefined);
+    return setInterval(() => {
+        void ctx.replyWithChatAction("typing").catch(() => undefined);
+    }, TYPING_INDICATOR_INTERVAL_MS);
+}
+
+export function stopTypingIndicator(timer: NodeJS.Timeout): void {
+    clearInterval(timer);
 }
 
 async function sendBulaAnswer(
@@ -285,12 +307,30 @@ export function registerHandlers(bot: Bot): void {
             return;
         }
 
-        const isFirstTime = await registerUpdateOnce(updateId, chatId);
-        if (!isFirstTime) {
+        // Reivindicação atômica: ignora silenciosamente se este update já foi concluído,
+        // ou se outra entrega dele está processando agora (evita duas respostas). Uma
+        // tentativa anterior que falhou ou morreu no meio (ex.: timeout) é reprocessada.
+        const claimed = await claimUpdateForProcessing(updateId, chatId);
+        if (!claimed) {
             return;
         }
 
-        await next();
+        try {
+            await next();
+        } catch (error) {
+            // NUNCA logar a pergunta do usuário, o token do bot nem outros segredos aqui:
+            // só o erro (mensagem/stack da lib) e identificadores técnicos do update.
+            console.error(`Falha ao processar o update ${updateId} do Telegram.`, error);
+            await releaseUpdateForRetry(updateId).catch((releaseError) => {
+                console.error(`Não foi possível liberar o update ${updateId} para nova tentativa.`, releaseError);
+            });
+            await ctx.reply(PROCESSING_ERROR_MESSAGE).catch(() => undefined);
+            return;
+        }
+
+        await markUpdateDone(updateId).catch((error) => {
+            console.error(`Não foi possível marcar o update ${updateId} do Telegram como concluído.`, error);
+        });
     });
 
     bot.command("start", async (ctx) => {
@@ -408,31 +448,30 @@ export function registerHandlers(bot: Bot): void {
             return;
         }
 
-        await ctx.replyWithChatAction("typing").catch(() => undefined);
-
-        let history: Awaited<ReturnType<typeof getRecentConversationTurns>> = [];
+        const typingTimer = startTypingIndicator(ctx);
         try {
-            history = await getRecentConversationTurns(userId);
-        } catch (error) {
-            console.error("Não foi possível carregar o contexto da conversa via Telegram.", error);
-        }
+            let history: Awaited<ReturnType<typeof getRecentConversationTurns>> = [];
+            try {
+                history = await getRecentConversationTurns(userId);
+            } catch (error) {
+                console.error("Não foi possível carregar o contexto da conversa via Telegram.", error);
+            }
 
-        let resultado;
-        try {
-            resultado = await consultarBula(question, { history });
-        } catch (error) {
-            console.error("Falha ao consultar a bula via Telegram.", error);
-            await ctx.reply("Não foi possível consultar a bula agora. Tente novamente em alguns instantes.");
-            return;
-        }
+            // Erros daqui (OpenAI, timeout, etc.) são propagados de propósito: o
+            // middleware de nível superior (registerHandlers) trata, loga sem dados
+            // sensíveis, avisa o usuário e libera o update para nova tentativa.
+            const resultado = await consultarBula(question, { history });
 
-        try {
-            await saveQuery(userId, question, resultado.answer, resultado.sources, "telegram");
-        } catch (error) {
-            console.error("Não foi possível salvar o histórico da consulta vinda do Telegram.", error);
-        }
+            try {
+                await saveQuery(userId, question, resultado.answer, resultado.sources, "telegram");
+            } catch (error) {
+                console.error("Não foi possível salvar o histórico da consulta vinda do Telegram.", error);
+            }
 
-        await sendBulaAnswer(ctx, resultado);
+            await sendBulaAnswer(ctx, resultado);
+        } finally {
+            stopTypingIndicator(typingTimer);
+        }
     });
 
     bot.on("callback_query:data", async (ctx) => {
