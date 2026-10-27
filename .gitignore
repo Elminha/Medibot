@@ -4,3 +4,5 @@ dist/
 *.log
 .vercel
 .env*
+.env.local
+.env*.local
