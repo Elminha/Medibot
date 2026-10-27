@@ -253,6 +253,7 @@ function clearApplicationData() {
     clearStoredTelegramLinkCode();
     telegramCodeBox.hidden = true;
     telegramOpenLink.hidden = true;
+    currentTelegramLink = null;
     questionInput.value = "";
     medicationForm.reset();
     reminderForm.reset();
@@ -1149,6 +1150,11 @@ const telegramConnectButton = document.querySelector("#telegram-connect-button")
 const telegramDisconnectButton = document.querySelector("#telegram-disconnect-button");
 const TELEGRAM_CONNECT_DEFAULT_LABEL = "Conectar Telegram";
 
+// Nunca fica em atributo algum do DOM (href, data-*): assim nada que leia o HTML da
+// página, como a Medição Aprimorada de cliques de saída do Analytics, chega a ver o
+// link com o código de vínculo.
+let currentTelegramLink = null;
+
 // O código de vínculo é um segredo de uso único e vida curta (10 min): guardamos em
 // sessionStorage (não localStorage) para que ele nunca sobreviva além da sessão do
 // navegador, e nunca o enviamos ao Analytics.
@@ -1213,6 +1219,7 @@ function handleTelegramCodeExpired() {
     telegramCopyButton.hidden = true;
     telegramRegenerateButton.hidden = true;
     telegramOpenLink.hidden = true;
+    currentTelegramLink = null;
     telegramConnectButton.hidden = false;
     telegramConnectButton.textContent = "Gerar novo código";
     telegramStatus.dataset.state = "expired";
@@ -1247,7 +1254,7 @@ function renderTelegramCode({ code, expiresAt, telegramLink }) {
     telegramConnectButton.hidden = true;
     telegramConnectButton.textContent = TELEGRAM_CONNECT_DEFAULT_LABEL;
     telegramOpenLink.hidden = !telegramLink;
-    if (telegramLink) telegramOpenLink.href = telegramLink;
+    currentTelegramLink = telegramLink || null;
     telegramCountdown.start(expiresAt);
 }
 
@@ -1272,6 +1279,7 @@ function renderTelegramLinked(linked) {
     if (linked) {
         telegramCodeBox.hidden = true;
         telegramOpenLink.hidden = true;
+        currentTelegramLink = null;
         telegramCountdown.stop();
         clearStoredTelegramLinkCode();
     }
@@ -1342,6 +1350,9 @@ async function disconnectTelegram() {
     }
 }
 
+telegramOpenLink.addEventListener("click", () => {
+    if (currentTelegramLink) window.open(currentTelegramLink, "_blank", "noopener,noreferrer");
+});
 telegramConnectButton.addEventListener("click", () => generateTelegramLinkCode(false));
 telegramRegenerateButton.addEventListener("click", () => generateTelegramLinkCode(true));
 telegramCopyButton.addEventListener("click", copyTelegramCode);
