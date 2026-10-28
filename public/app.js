@@ -1781,10 +1781,27 @@ document.querySelector("#reset-password-request-new-button").addEventListener("c
 
 document.querySelector("#logout-button").addEventListener("click", () => showAuthentication());
 
+async function fetchPasswordResetCapability() {
+    try {
+        const response = await fetch("/api/auth/capabilities");
+        if (!response.ok) return false;
+        const data = await response.json();
+        return data?.passwordReset === true;
+    } catch {
+        return false;
+    }
+}
+
 async function initializeApplication() {
+    const passwordResetEnabled = await fetchPasswordResetCapability();
+    document.querySelector("#show-forgot-password-wrapper").hidden = !passwordResetEnabled;
+
     if (pendingPasswordResetToken) {
-        showResetPassword();
-        return;
+        if (passwordResetEnabled) {
+            showResetPassword();
+            return;
+        }
+        pendingPasswordResetToken = null;
     }
 
     const token = getAuthToken();

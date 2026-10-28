@@ -26,6 +26,11 @@ export class PasswordResetConfigurationError extends Error {
     }
 }
 
+/** Só o texto exato "true" liga o fluxo; ausente ou qualquer outro valor desliga. */
+export function isPasswordResetEnabled(): boolean {
+    return process.env.PASSWORD_RESET_ENABLED === "true";
+}
+
 const LOCALHOST_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 
 /**

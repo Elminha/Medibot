@@ -10,7 +10,7 @@ import {
     type LoginInput,
     type RegisterInput
 } from "../services/authService.js";
-import { confirmPasswordReset, requestPasswordReset } from "../services/passwordResetService.js";
+import { confirmPasswordReset, isPasswordResetEnabled, requestPasswordReset } from "../services/passwordResetService.js";
 
 const authRoutes = Router();
 
@@ -113,7 +113,15 @@ authRoutes.get("/me", requireAuthentication, (request: AuthenticatedRequest, res
     return response.json({ user: request.auth!.user });
 });
 
+authRoutes.get("/capabilities", (_request: Request, response: Response) => {
+    return response.json({ passwordReset: isPasswordResetEnabled() });
+});
+
 authRoutes.post("/forgot-password", async (request: Request, response: Response) => {
+    if (!isPasswordResetEnabled()) {
+        return response.status(404).json({ error: "Recurso indisponível." });
+    }
+
     const email = parseForgotPasswordInput(request.body);
     if (!email) {
         return response.status(400).json({ error: "Informe um e-mail válido." });
@@ -132,6 +140,10 @@ authRoutes.post("/forgot-password", async (request: Request, response: Response)
 });
 
 authRoutes.post("/reset-password", async (request: Request, response: Response) => {
+    if (!isPasswordResetEnabled()) {
+        return response.status(404).json({ error: "Recurso indisponível." });
+    }
+
     const input = parseResetPasswordInput(request.body);
     if (!input) {
         return response.status(400).json({ error: "Informe o token e a nova senha." });
