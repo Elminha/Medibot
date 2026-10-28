@@ -36,6 +36,7 @@
                     <button class="primary-button" type="submit">Entrar</button>
                 </form>
                 <p class="auth-feedback" id="login-feedback" role="alert"></p>
+                <p class="auth-switch" id="show-forgot-password-wrapper" hidden><button type="button" class="text-button" id="show-forgot-password">Esqueci minha senha</button></p>
                 <p class="auth-switch">Ainda não tem conta? <button type="button" class="text-button" id="show-register">Criar conta</button></p>
             </div>
             <div id="register-panel" hidden>
@@ -43,14 +44,36 @@
                 <p class="auth-description">Use seus dados para começar a usar o MediBot.</p>
                 <form id="register-form" class="auth-form" novalidate>
                     <label>Nome<input id="register-name" type="text" autocomplete="name" required /></label>
-                    <label>E-mail <span>(opcional)</span><input id="register-email" type="email" autocomplete="email" /></label>
+                    <label>E-mail<input id="register-email" type="email" autocomplete="email" required /></label>
+                    <label>Confirme o e-mail<input id="register-email-confirm" type="email" autocomplete="email" required /></label>
                     <label>Telefone <span>(opcional)</span><input id="register-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(61) 99999-9999" /></label>
-                    <p class="auth-hint">Informe pelo menos um: e-mail ou telefone.</p>
+                    <p class="auth-hint">O e-mail é obrigatório. O telefone é opcional.</p>
                     <label>Senha<input id="register-password" type="password" autocomplete="new-password" minlength="8" required /></label>
                     <button class="primary-button" type="submit">Criar conta</button>
                 </form>
                 <p class="auth-feedback" id="register-feedback" role="alert"></p>
                 <p class="auth-switch">Já tem conta? <button type="button" class="text-button" id="show-login">Voltar para entrar</button></p>
+            </div>
+            <div id="forgot-password-panel" hidden>
+                <h1>Esqueci minha senha</h1>
+                <p class="auth-description">Informe seu e-mail. Se ele estiver cadastrado, enviaremos um link para redefinir sua senha.</p>
+                <form id="forgot-password-form" class="auth-form" novalidate>
+                    <label>E-mail<input id="forgot-password-email" type="email" autocomplete="email" required /></label>
+                    <button class="primary-button" type="submit" id="forgot-password-submit">Enviar link</button>
+                </form>
+                <p class="auth-feedback" id="forgot-password-feedback" role="alert"></p>
+                <p class="auth-switch">Lembrou a senha? <button type="button" class="text-button" id="show-login-from-forgot">Voltar para entrar</button></p>
+            </div>
+            <div id="reset-password-panel" hidden>
+                <h1>Defina uma nova senha</h1>
+                <p class="auth-description" id="reset-password-description">Escolha uma nova senha para sua conta.</p>
+                <form id="reset-password-form" class="auth-form" novalidate>
+                    <label>Nova senha<input id="reset-password-password" type="password" autocomplete="new-password" minlength="8" required /></label>
+                    <label>Confirme a nova senha<input id="reset-password-password-confirm" type="password" autocomplete="new-password" minlength="8" required /></label>
+                    <button class="primary-button" type="submit" id="reset-password-submit">Redefinir senha</button>
+                </form>
+                <p class="auth-feedback" id="reset-password-feedback" role="alert"></p>
+                <p class="auth-switch" id="reset-password-request-new" hidden><button type="button" class="text-button" id="reset-password-request-new-button">Pedir um novo link</button></p>
             </div>
         </section>
     </main>

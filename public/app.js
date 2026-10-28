@@ -11,6 +11,18 @@ import {
     TelegramLinkCountdownTimer
 } from "./telegramLinkCountdown.js";
 
+// Lê e remove o token de "#redefinir=<token>" da URL antes de qualquer outro código
+// (tema, consentimento de cookies/GA, bootstrap de login). O token nunca é guardado em
+// localStorage/sessionStorage, em atributos do DOM, em eventos do GA ou em logs — fica
+// só nesta variável, em memória, enquanto a página estiver aberta.
+let pendingPasswordResetToken = null;
+(function consumePasswordResetTokenFromHash() {
+    const match = /^#redefinir=(.+)$/.exec(window.location.hash);
+    if (!match) return;
+    pendingPasswordResetToken = decodeURIComponent(match[1]);
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+})();
+
 const form = document.querySelector("#chat-form");
 const questionInput = document.querySelector("#question");
 const messages = document.querySelector("#messages");
@@ -26,6 +38,13 @@ const loginForm = document.querySelector("#login-form");
 const registerForm = document.querySelector("#register-form");
 const loginFeedback = document.querySelector("#login-feedback");
 const registerFeedback = document.querySelector("#register-feedback");
+const forgotPasswordPanel = document.querySelector("#forgot-password-panel");
+const resetPasswordPanel = document.querySelector("#reset-password-panel");
+const forgotPasswordForm = document.querySelector("#forgot-password-form");
+const resetPasswordForm = document.querySelector("#reset-password-form");
+const forgotPasswordFeedback = document.querySelector("#forgot-password-feedback");
+const resetPasswordFeedback = document.querySelector("#reset-password-feedback");
+const resetPasswordRequestNew = document.querySelector("#reset-password-request-new");
 const loggedUser = document.querySelector("#logged-user");
 const userAvatar = document.querySelector(".user-avatar");
 const historyList = document.querySelector("#history-list");
@@ -224,6 +243,8 @@ function showLogin(message = "", success = false) {
     authenticatedApp.hidden = true;
     loginPanel.hidden = false;
     registerPanel.hidden = true;
+    forgotPasswordPanel.hidden = true;
+    resetPasswordPanel.hidden = true;
     loginFeedback.textContent = message;
     loginFeedback.classList.toggle("success", success);
 }
@@ -231,10 +252,36 @@ function showLogin(message = "", success = false) {
 function showRegister() {
     loginPanel.hidden = true;
     registerPanel.hidden = false;
+    forgotPasswordPanel.hidden = true;
+    resetPasswordPanel.hidden = true;
     loginFeedback.textContent = "";
     registerFeedback.textContent = "";
     registerFeedback.classList.remove("success");
     document.querySelector("#register-name").focus();
+}
+
+function showForgotPassword() {
+    loginPanel.hidden = true;
+    registerPanel.hidden = true;
+    forgotPasswordPanel.hidden = false;
+    resetPasswordPanel.hidden = true;
+    loginFeedback.textContent = "";
+    forgotPasswordFeedback.textContent = "";
+    forgotPasswordFeedback.classList.remove("success");
+    document.querySelector("#forgot-password-email").focus();
+}
+
+function showResetPassword() {
+    authView.hidden = false;
+    authenticatedApp.hidden = true;
+    loginPanel.hidden = true;
+    registerPanel.hidden = true;
+    forgotPasswordPanel.hidden = true;
+    resetPasswordPanel.hidden = false;
+    resetPasswordFeedback.textContent = "";
+    resetPasswordFeedback.classList.remove("success");
+    resetPasswordRequestNew.hidden = true;
+    document.querySelector("#reset-password-password").focus();
 }
 
 function clearApplicationData() {
@@ -1600,6 +1647,8 @@ document.querySelector("#mobile-menu").addEventListener("click", () => document.
 
 document.querySelector("#show-register").addEventListener("click", showRegister);
 document.querySelector("#show-login").addEventListener("click", () => showLogin());
+document.querySelector("#show-forgot-password").addEventListener("click", showForgotPassword);
+document.querySelector("#show-login-from-forgot").addEventListener("click", () => showLogin());
 
 loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -1628,12 +1677,17 @@ registerForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const name = document.querySelector("#register-name").value.trim();
     const email = document.querySelector("#register-email").value.trim();
+    const emailConfirm = document.querySelector("#register-email-confirm").value.trim();
     const phone = document.querySelector("#register-phone").value.trim();
     const password = document.querySelector("#register-password").value;
     registerFeedback.textContent = "";
 
-    if (!email && !phone) {
-        registerFeedback.textContent = "Informe pelo menos um: e-mail ou telefone.";
+    if (!email) {
+        registerFeedback.textContent = "Informe um e-mail.";
+        return;
+    }
+    if (email.toLowerCase() !== emailConfirm.toLowerCase()) {
+        registerFeedback.textContent = "Os e-mails informados não coincidem.";
         return;
     }
 
@@ -1645,16 +1699,111 @@ registerForm.addEventListener("submit", async (event) => {
         });
         if (!response.ok) throw new Error(await readError(response, "Não foi possível criar a conta."));
         registerForm.reset();
-        track("sign_up", { method: email ? "email" : "phone" });
+        track("sign_up", { method: "email" });
         showLogin("Conta criada com sucesso. Agora entre com seu e-mail ou telefone e senha.", true);
     } catch (error) {
         registerFeedback.textContent = error instanceof Error ? error.message : "Não foi possível criar a conta.";
     }
 });
 
+forgotPasswordForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const email = document.querySelector("#forgot-password-email").value.trim();
+    const submitButton = document.querySelector("#forgot-password-submit");
+    forgotPasswordFeedback.textContent = "";
+    forgotPasswordFeedback.classList.remove("success");
+    submitButton.disabled = true;
+    try {
+        const response = await fetch("/api/auth/forgot-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 400) throw new Error(data?.error || "Informe um e-mail válido.");
+        forgotPasswordForm.reset();
+        forgotPasswordFeedback.textContent = data?.message || "Se esse e-mail estiver cadastrado, enviamos um link para redefinir a senha.";
+        forgotPasswordFeedback.classList.add("success");
+        track("password_reset_requested");
+    } catch (error) {
+        forgotPasswordFeedback.textContent = error instanceof Error ? error.message : "Não foi possível processar o pedido.";
+    } finally {
+        submitButton.disabled = false;
+    }
+});
+
+resetPasswordForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const password = document.querySelector("#reset-password-password").value;
+    const passwordConfirm = document.querySelector("#reset-password-password-confirm").value;
+    const submitButton = document.querySelector("#reset-password-submit");
+    resetPasswordFeedback.textContent = "";
+    resetPasswordFeedback.classList.remove("success");
+
+    if (password !== passwordConfirm) {
+        resetPasswordFeedback.textContent = "As senhas informadas não coincidem.";
+        return;
+    }
+    if (!pendingPasswordResetToken) {
+        resetPasswordFeedback.textContent = "Link inválido ou expirado.";
+        resetPasswordRequestNew.hidden = false;
+        return;
+    }
+
+    submitButton.disabled = true;
+    try {
+        const response = await fetch("/api/auth/reset-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: pendingPasswordResetToken, password })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            resetPasswordFeedback.textContent = data?.error || "Não foi possível redefinir a senha.";
+            if (response.status === 400) resetPasswordRequestNew.hidden = false;
+            return;
+        }
+        pendingPasswordResetToken = null;
+        resetPasswordForm.reset();
+        track("password_reset_completed");
+        showLogin(data?.message || "Senha redefinida com sucesso. Faça login com sua nova senha.", true);
+    } catch {
+        resetPasswordFeedback.textContent = "Não foi possível redefinir a senha. Verifique sua conexão e tente novamente.";
+    } finally {
+        submitButton.disabled = false;
+    }
+});
+
+document.querySelector("#reset-password-request-new-button").addEventListener("click", () => {
+    pendingPasswordResetToken = null;
+    showForgotPassword();
+});
+
 document.querySelector("#logout-button").addEventListener("click", () => showAuthentication());
 
+async function fetchPasswordResetCapability() {
+    try {
+        const response = await fetch("/api/auth/capabilities");
+        if (!response.ok) return false;
+        const data = await response.json();
+        return data?.passwordReset === true;
+    } catch {
+        return false;
+    }
+}
+
 async function initializeApplication() {
+    const passwordResetEnabled = await fetchPasswordResetCapability();
+    document.querySelector("#show-forgot-password-wrapper").hidden = !passwordResetEnabled;
+
+    if (pendingPasswordResetToken) {
+        if (passwordResetEnabled) {
+            showResetPassword();
+            return;
+        }
+        pendingPasswordResetToken = null;
+    }
+
     const token = getAuthToken();
     if (!token) {
         showLogin();

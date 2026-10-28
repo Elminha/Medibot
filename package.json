@@ -25,12 +25,14 @@
         "express": "^5.2.1",
         "grammy": "^1.46.0",
         "jsonwebtoken": "^9.0.3",
+        "nodemailer": "^10.2.1",
         "openai": "^7.8.0",
         "pg": "^8.16.3"
     },
     "devDependencies": {
         "@types/express": "^5.0.6",
         "@types/node": "^22.10.2",
+        "@types/nodemailer": "^8.0.2",
         "@types/pg": "^8.15.5",
         "tsx": "^4.23.12",
         "typescript": "^5.7.2"

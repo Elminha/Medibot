@@ -11,6 +11,10 @@ import telegramRoutes from "./routes/telegramRoutes.js";
 const app = express();
 const port = Number(process.env.PORT) || 3000;
 
+// Confia em exatamente 1 proxy (a borda da Vercel). A Vercel sobrescreve X-Forwarded-For
+// com o IP real do cliente e não repassa IPs externos, então não há risco de spoofing.
+app.set("trust proxy", 1);
+
 app.use(express.json());
 app.use(express.static(path.join(process.cwd(), "public")));
 
