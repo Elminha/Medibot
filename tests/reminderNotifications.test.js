@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
     DEFAULT_REMINDER_TIME_ZONE,
     fetchAuthenticatedReminders,
+    getNextOccurrence,
     getNotificationAvailability,
     getReminderOccurrences,
     getTimezoneParts,
@@ -56,6 +57,107 @@ test("lembretes inativos ou sem horário válido não geram ocorrência", () => 
     assert.equal(getReminderOccurrences({ ...active(1, ["10:30"]), active: false }, now).length, 0);
     assert.equal(getReminderOccurrences(active(1, []), now).length, 0);
     assert.equal(getReminderOccurrences(active(1, ["25:99"]), now).length, 0);
+});
+
+test("aceita defensivamente o formato bruto do node-pg: Date (coluna DATE) e 'HH:MM:SS' (coluna TIME)", () => {
+    // Antes da correção em reminderService.ts (SELECT_REMINDER_COLUMNS), starts_on/
+    // ends_on saíam como objeto Date (node-pg converte DATE para Date em UTC meia-noite)
+    // e, depois de um round-trip por JSON, como string ISO "YYYY-MM-DDTHH:MM:SS.sssZ" —
+    // bem diferente do "YYYY-MM-DD" que o agendador comparava. Isso fazia
+    // "2024-01-08" < "2024-01-08T00:00:00.000Z" (prefixo é "menor" que o todo) e o
+    // lembrete parecia "ainda não começou" bem no dia em que foi criado.
+    const pgShapedReminder = {
+        id: 42,
+        medicationName: "Dipirona",
+        times: ["08:00:00", "20:00:00"], // "HH:MM:SS" bruto de uma coluna TIME sem to_char
+        weekdays: [],
+        startsOn: new Date("2024-01-08T00:00:00.000Z"), // Date, como node-pg devolve p/ DATE
+        endsOn: null,
+        active: true
+    };
+    const onStartDay = new Date("2024-01-08T11:00:00.000Z");
+    const occurrences = getReminderOccurrences(pgShapedReminder, onStartDay, DEFAULT_REMINDER_TIME_ZONE);
+    assert.equal(occurrences.length, 2);
+    assert.deepEqual(occurrences.map((o) => o.key.split("T")[1]), ["08:00", "20:00"]);
+
+    // Um dia ANTES do início (startsOn ainda como Date de verdade): comparar string com
+    // Date sem normalizar cai em NaN (nem < nem >), então a checagem de vigência era
+    // simplesmente ignorada e o lembrete vazava antes de começar. Normalizado, bloqueia.
+    const beforeStart = new Date("2024-01-07T11:00:00.000Z");
+    assert.equal(getReminderOccurrences(pgShapedReminder, beforeStart, DEFAULT_REMINDER_TIME_ZONE).length, 0);
+
+    // Mesma coisa, mas já serializado em JSON (string ISO, não mais um Date de verdade).
+    const jsonShapedReminder = { ...pgShapedReminder, startsOn: "2024-01-08T00:00:00.000Z" };
+    assert.equal(getReminderOccurrences(jsonShapedReminder, onStartDay, DEFAULT_REMINDER_TIME_ZONE).length, 2);
+});
+
+test("o agendador reconhece um lembrete criado depois de já estar rodando (setReminders em runtime)", () => {
+    let now = new Date("2024-01-08T13:29:50.000Z");
+    const notifications = [];
+    class MockNotification { constructor(_title, options) { notifications.push(options); } }
+    const scheduler = new ReminderNotificationScheduler({
+        userId: 1, notification: MockNotification, storage: null, onNavigate() {}, now: () => now, setIntervalFn: () => 1, clearIntervalFn() {}
+    });
+    scheduler.start(); // nenhum lembrete ainda: a primeira checagem não tem nada a fazer
+    assert.equal(notifications.length, 0);
+
+    // "cria" um lembrete para 10:30 (13:30 UTC) enquanto o agendador já está rodando —
+    // é exatamente o que acontece quando loadReminders()/setReminders roda de novo
+    // depois de criar, editar, pausar/reativar ou excluir um lembrete com a aba aberta.
+    scheduler.setReminders([active(77, ["10:30"])]);
+
+    now = new Date("2024-01-08T13:30:03.000Z"); // próxima checagem periódica, 15s depois
+    scheduler.check();
+    assert.equal(notifications.length, 1);
+    scheduler.stop();
+});
+
+test("modo debug (localStorage medibotReminderDebug=1) loga a decisão por lembrete via console.debug, sem nome de medicamento", () => {
+    const now = new Date("2024-01-08T13:30:00.000Z");
+    const values = new Map();
+    const debugStorage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+    const calls = [];
+    const originalDebug = console.debug;
+    console.debug = (...args) => calls.push(args);
+    try {
+        const scheduler = new ReminderNotificationScheduler({
+            userId: 1, notification: class { constructor() {} }, storage: debugStorage, onNavigate() {}, now: () => now, setIntervalFn: () => 1, clearIntervalFn() {}
+        });
+        scheduler.setReminders([active(55, ["10:30"], { medicationName: "Dipirona" })]);
+
+        scheduler.check();
+        assert.equal(calls.length, 0, "desligado por padrão");
+
+        debugStorage.setItem("medibotReminderDebug", "1");
+        scheduler.check();
+        assert.equal(calls.length, 1);
+        const [label, payload] = calls[0];
+        assert.match(label, /agendador de lembretes/);
+        assert.equal(payload.totalLembretesAtivos, 1);
+        assert.ok(Array.isArray(payload.decisoes) && payload.decisoes.length > 0);
+        assert.ok(!JSON.stringify(payload).includes("Dipirona"), "nunca deve logar o nome do medicamento");
+        scheduler.stop();
+    } finally {
+        console.debug = originalDebug;
+    }
+});
+
+test("getNextOccurrence encontra a próxima ocorrência mesmo que seja só no dia seguinte", () => {
+    const now = new Date("2024-01-08T23:50:00.000Z"); // 20:50 em São Paulo (UTC-3)
+    const reminder = active(3, ["02:59"], { medicationName: "Nimesulida" });
+    const next = getNextOccurrence([reminder], now, DEFAULT_REMINDER_TIME_ZONE);
+    assert.ok(next);
+    assert.equal(next.time, "02:59");
+    assert.equal(next.medicationName, "Nimesulida");
+    assert.ok(next.at > now.getTime());
+});
+
+test("getNextOccurrence devolve null sem lembrete ativo futuro", () => {
+    assert.equal(getNextOccurrence([], new Date(), DEFAULT_REMINDER_TIME_ZONE), null);
+    assert.equal(
+        getNextOccurrence([{ ...active(1, ["08:00"]), active: false }], new Date(), DEFAULT_REMINDER_TIME_ZONE),
+        null
+    );
 });
 
 test("start()/stop() usam o setInterval/clearInterval nativos sem receiver errado (reproduz o 'Illegal invocation' real do Chromium quando setIntervalFn não é injetado)", () => {

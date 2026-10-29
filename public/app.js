@@ -1,6 +1,7 @@
 import {
     DEFAULT_REMINDER_TIME_ZONE,
-    getReminderOccurrences,
+    getNextOccurrence,
+    getTimezoneParts,
     startReminderSchedulerIfAllowed
 } from "./reminderNotifications.js";
 import {
@@ -1052,24 +1053,25 @@ function permissionKind() {
     return "default";
 }
 
-function computeNextOccurrence(reminders, timezone) {
-    const now = Date.now();
-    let best = null;
-    for (const reminder of reminders) {
-        for (const occurrence of getReminderOccurrences(reminder, new Date(now), timezone)) {
-            if (occurrence.at < now) continue;
-            if (!best || occurrence.at < best.occurrence.at) best = { reminder, occurrence };
-        }
-    }
-    return best ? { medicationName: best.reminder.medicationName, time: best.occurrence.key.split("T")[1] } : null;
+/** "02:59", "amanhã 02:59" ou "05/11 02:59", segundo a distância em dias de calendário. */
+function formatNextOccurrenceLabel(next, timezone) {
+    const todayKey = getTimezoneParts(new Date(), timezone).dateKey;
+    const occurrenceKey = getTimezoneParts(new Date(next.at), timezone).dateKey;
+    if (occurrenceKey === todayKey) return next.time;
+    const tomorrowKey = getTimezoneParts(new Date(Date.now() + 86_400_000), timezone).dateKey;
+    if (occurrenceKey === tomorrowKey) return `amanhã ${next.time}`;
+    const [, month, day] = occurrenceKey.split("-");
+    return `${day}/${month} ${next.time}`;
 }
 
 function updateNextReminderLine() {
     const next = permissionKind() === "granted" && reminderLoadState === "loaded"
-        ? computeNextOccurrence(currentReminders, currentReminderTimezone)
+        ? getNextOccurrence(currentReminders, new Date(), currentReminderTimezone)
         : null;
     notificationNext.hidden = !next;
-    if (next) notificationNext.textContent = `Próximo lembrete: ${next.time} (${next.medicationName})`;
+    if (next) {
+        notificationNext.textContent = `Próximo lembrete: ${formatNextOccurrenceLabel(next, currentReminderTimezone)} (${next.medicationName})`;
+    }
 }
 
 /** Única função que escreve no card: estado sempre consistente, nunca "preso". */

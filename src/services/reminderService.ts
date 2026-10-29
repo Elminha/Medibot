@@ -105,8 +105,8 @@ const SELECT_REMINDER_COLUMNS = `
     r.medication_id,
     m.name AS medication_name,
     r.active,
-    r.starts_on,
-    r.ends_on,
+    to_char(r.starts_on, 'YYYY-MM-DD') AS starts_on,
+    to_char(r.ends_on, 'YYYY-MM-DD') AS ends_on,
     COALESCE(
         (SELECT array_agg(to_char(rt."time", 'HH24:MI') ORDER BY rt."time")
          FROM reminder_times rt WHERE rt.reminder_id = r.id),
