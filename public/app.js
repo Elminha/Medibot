@@ -23,6 +23,7 @@ import {
     normalizeTypedDateBr,
     normalizeTypedTime,
     recalculateIntervalTimes,
+    resolveStartsOnFromNativePicker,
     stepTimeValue,
     summarizeReminder,
     summarizeSchedule
@@ -499,7 +500,7 @@ function appendChatTelegramHint() {
     hint.id = "chat-telegram-hint";
     hint.hidden = telegramLinked === true;
     hint.append(
-        document.createTextNode("Dica: conecte o Telegram para consultar bulas pelo celular e, em breve, receber lembretes por lá."),
+        document.createTextNode("Dica: conecte o Telegram para consultar bulas e receber notificações."),
         medicationButton("Conectar Telegram", "text-button", () => setView("telegram"))
     );
     messages.append(hint);
@@ -1832,11 +1833,15 @@ wizardStartsOnCalendarButton.addEventListener("click", () => {
     wizardStartsOnNativeInput.click();
 });
 
-wizardStartsOnNativeInput.addEventListener("change", () => {
-    if (!wizardStartsOnNativeInput.value) return;
-    setStartsOnIso(wizardStartsOnNativeInput.value);
+// "Limpar" no seletor nativo dispara input/change com value="" só fechando o
+// popup: sem isto, o campo de texto mascarado ficava com a data anterior.
+function syncStartsOnFromNativePicker() {
+    const resolved = resolveStartsOnFromNativePicker(wizardStartsOnNativeInput.value);
+    setStartsOnIso(resolved || "");
     updateWizardSummary();
-});
+}
+wizardStartsOnNativeInput.addEventListener("input", syncStartsOnFromNativePicker);
+wizardStartsOnNativeInput.addEventListener("change", syncStartsOnFromNativePicker);
 
 reminderWizardForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -1921,6 +1926,9 @@ const telegramRegenerateButton = document.querySelector("#telegram-regenerate-bu
 const telegramCountdownEl = document.querySelector("#telegram-countdown");
 const telegramCodeRow = document.querySelector("#telegram-code-row");
 const telegramCodeHint = document.querySelector("#telegram-code-hint");
+const telegramLinkStepOpen = document.querySelector("#telegram-link-step-open");
+const telegramLinkStepCommand = document.querySelector("#telegram-link-step-command");
+const telegramLinkCommand = document.querySelector("#telegram-link-command");
 const telegramRefreshButton = document.querySelector("#telegram-refresh-button");
 const telegramOpenLink = document.querySelector("#telegram-open-link");
 const telegramConnectButton = document.querySelector("#telegram-connect-button");
@@ -1986,8 +1994,11 @@ function handleTelegramCodeExpired() {
     clearStoredTelegramLinkCode();
     // A linha "Código: ..." some por completo: a mensagem de status abaixo já diz
     // "Código expirado", então mantê-la visível só duplicaria a informação.
+    telegramLinkStepOpen.hidden = true;
+    telegramLinkStepCommand.hidden = true;
     telegramCodeRow.hidden = true;
     telegramCodeValue.textContent = "";
+    telegramLinkCommand.textContent = "";
     telegramCountdownEl.textContent = "";
     delete telegramCountdownEl.dataset.level;
     // A dica "código expira em 10 minutos" só faz sentido com um código ativo; some
@@ -2021,10 +2032,13 @@ const telegramCountdown = new TelegramLinkCountdownTimer({
 });
 
 function renderTelegramCode({ code, expiresAt, telegramLink }) {
+    telegramLinkStepOpen.hidden = false;
+    telegramLinkStepCommand.hidden = false;
     telegramCodeRow.hidden = false;
     telegramCodeHint.hidden = false;
     telegramStatus.dataset.state = "";
     telegramCodeValue.textContent = code;
+    telegramLinkCommand.textContent = `/vincular ${code}`;
     telegramCodeBox.hidden = false;
     telegramCopyButton.hidden = false;
     telegramRegenerateButton.hidden = false;
@@ -2078,7 +2092,7 @@ async function generateTelegramLinkCode(isRegeneration = false) {
         storeTelegramLinkCode(data.code, data.expiresAt, data.telegramLink);
         telegramStatus.textContent = isRegeneration
             ? "Novo código gerado. O anterior deixou de valer."
-            : "Envie esse código para o bot no Telegram (ou clique no botão 'Abrir no Telegram') para concluir o vínculo.";
+            : "Código gerado.";
         track("telegram_link_generated");
     } catch (error) {
         telegramStatus.textContent = error instanceof Error ? error.message : "Não foi possível gerar o código de vínculo.";

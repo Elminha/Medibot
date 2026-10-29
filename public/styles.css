@@ -273,6 +273,10 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
     box-shadow: var(--shadow-sm); padding: 26px;
 }
 .history-panel[hidden], .medications-panel[hidden], .reminders-panel[hidden], .telegram-panel[hidden] { display: none !important; }
+/* A tela de Lembretes ganha mais espaço que as demais (duas colunas, formulário
+   mais horizontal) — min() já protege telas estreitas, então não precisa de
+   media query: em viewports pequenos "calc(100% - 48px)" continua vencendo. */
+.reminders-panel { width: min(calc(100% - 48px), 1360px); }
 .section-heading h2 { margin: 0; color: var(--text); font-size: 1.2rem; }
 .section-heading p { margin: 4px 0 20px; color: var(--text-muted); font-size: .9rem; }
 /* Cabeçalho de página (ex.: "Lembretes", "Telegram"): mesmo texto de antes, só sem
@@ -411,7 +415,8 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 }
 @media (min-width: 1100px) {
     .reminders-columns {
-        display: grid; grid-template-columns: minmax(340px, 1fr) minmax(360px, 1.2fr);
+        /* Formulário ~2/3, lista ~1/3 (lista um pouco mais estreita que antes). */
+        display: grid; grid-template-columns: minmax(420px, 2fr) minmax(300px, 1fr);
         align-items: start; gap: var(--space-5);
     }
     /* "order" (usado para reordenar no celular) também muda a ordem de posição
@@ -424,6 +429,22 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
     /* O CSS acima ignora .collapsed nesta largura: form e lista ficam sempre
        visíveis lado a lado, então a classe (só relevante no celular) não precisa
        de regra alguma aqui. */
+
+    /* Formulário "Novo lembrete" mais horizontal: campos em grade de 2 colunas.
+       Medicamento + "Quantas vezes por dia?" ficam lado a lado (ordem do DOM);
+       "Horários" e "Onde avisar?" (.wizard-step-full) ocupam a largura inteira,
+       o que empurra "Quais dias?" e "Por quanto tempo?" para a linha seguinte,
+       também lado a lado; Resumo + botão Salvar na largura inteira ao final. */
+    .reminder-wizard-form {
+        display: grid; grid-template-columns: 1fr 1fr; align-items: start;
+        gap: var(--space-4) var(--space-5);
+    }
+    .reminder-wizard-form > .wizard-step-full,
+    .reminder-wizard-form > .wizard-summary-block,
+    .reminder-wizard-form > .reminder-feedback,
+    .reminder-wizard-form > #wizard-save-button {
+        grid-column: 1 / -1;
+    }
 }
 
 /* ===== Reminder wizard (criar/editar, reaproveitado para os dois) ===== */
@@ -503,6 +524,13 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .telegram-card { align-items: flex-start; }
 .telegram-card .telegram-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: none; }
 .telegram-code-box { margin-top: 10px; }
+/* Os dois passos para concluir o vínculo (abrir no Telegram vs. já ter a conversa
+   e copiar o comando) — texto normal, não "secundário" como o resto do card. */
+.telegram-link-step { color: var(--text) !important; font-size: .88rem !important; margin: 0 0 6px !important; }
+.telegram-link-step code {
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: .92em;
+    background: var(--surface); border-radius: 4px; padding: 2px 6px; color: var(--primary);
+}
 .telegram-code-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text) !important; font-size: .9rem !important; }
 .telegram-code-row strong { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 1rem; letter-spacing: .06em; color: var(--primary); }
 .icon-text-button { display: inline-flex; align-items: center; gap: 6px; }

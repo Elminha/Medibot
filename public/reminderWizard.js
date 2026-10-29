@@ -89,6 +89,17 @@ export function brDateToIso(value) {
     return `${year}-${month}-${day}`;
 }
 
+/**
+ * Regra do botão "Limpar" do seletor nativo (<input type="date">): valor vazio
+ * limpa o campo mascarado de volta ao estado "nada digitado" (null); valor
+ * preenchido é um "YYYY-MM-DD" válido vindo do próprio picker, repassado como
+ * está. O "Limpar" nativo dispara input/change com value="" só fechando o
+ * popup — sem isto, o campo de texto ficava com a data anterior.
+ */
+export function resolveStartsOnFromNativePicker(nativeValue) {
+    return nativeValue ? nativeValue : null;
+}
+
 // ===== Edição com posições fixas (campos de horário e data) =====
 //
 // Cada campo é um conjunto de "células" (1 dígito cada: 4 para "HH:MM", 8 para

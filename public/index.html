@@ -270,7 +270,7 @@
                         </div>
                     </section>
 
-                    <section class="wizard-step">
+                    <section class="wizard-step wizard-step-full">
                         <p class="wizard-step-label" id="wizard-times-label">Horários</p>
                         <div class="wizard-time-list" id="wizard-time-list" aria-labelledby="wizard-times-label"></div>
                         <button type="button" class="secondary-button" id="wizard-add-time-button">Adicionar horário</button>
@@ -325,7 +325,7 @@
                         </div>
                     </section>
 
-                    <section class="wizard-step">
+                    <section class="wizard-step wizard-step-full">
                         <p class="wizard-step-label" id="wizard-channels-label">Onde avisar?</p>
                         <div class="wizard-chip-group" id="wizard-channel-options" role="group" aria-labelledby="wizard-channels-label">
                             <button type="button" class="wizard-chip" data-channel="browser" aria-pressed="true">Navegador</button>
@@ -368,6 +368,8 @@
                     <h3 id="telegram-title">Conectar Telegram</h3>
                     <p id="telegram-status" role="status" aria-live="polite">Vincule sua conta para consultar bulas também pelo Telegram.</p>
                     <div class="telegram-code-box" id="telegram-code-box" hidden>
+                        <p class="telegram-link-step" id="telegram-link-step-open">Toque em "Abrir no Telegram" para concluir o vínculo.</p>
+                        <p class="telegram-link-step" id="telegram-link-step-command">Se você já tem a conversa com o bot, copie o código abaixo e envie para o bot: <code id="telegram-link-command"></code></p>
                         <p class="telegram-code-row" id="telegram-code-row">
                             Código: <strong id="telegram-code-value"></strong>
                             <button type="button" class="secondary-button" id="telegram-copy-button">Copiar</button>

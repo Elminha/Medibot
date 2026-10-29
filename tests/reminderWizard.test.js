@@ -16,6 +16,7 @@ import {
     normalizeTypedDateBr,
     normalizeTypedTime,
     recalculateIntervalTimes,
+    resolveStartsOnFromNativePicker,
     stepTimeValue,
     summarizeReminder,
     summarizeSchedule
@@ -247,6 +248,13 @@ test("brDateToIso converte 'DD/MM/AAAA' validado para 'YYYY-MM-DD'; inválido de
     assert.equal(brDateToIso("10/03/2024"), "2024-03-10");
     assert.equal(brDateToIso("31/02/2024"), null);
     assert.equal(brDateToIso("10-03-2024"), null);
+});
+
+test("resolveStartsOnFromNativePicker: 'Limpar' (valor vazio) limpa; escolher um dia repassa o ISO", () => {
+    assert.equal(resolveStartsOnFromNativePicker(""), null, "'Limpar' no seletor nativo manda value=\"\"");
+    assert.equal(resolveStartsOnFromNativePicker("2024-03-10"), "2024-03-10");
+    assert.equal(resolveStartsOnFromNativePicker(null), null);
+    assert.equal(resolveStartsOnFromNativePicker(undefined), null);
 });
 
 test("summarizeReminder monta a linha de resumo usada antes de salvar e na lista", () => {
