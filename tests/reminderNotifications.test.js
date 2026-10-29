@@ -263,6 +263,34 @@ test("troca de fuso do usuário recria o agendador em vez de reaproveitar o ante
     second.stop();
 });
 
+test("aba escondida (visibilityState \"hidden\") não pausa o polling de 15s: o lembrete dispara no horário, sem esperar o usuário voltar o foco", () => {
+    // Reproduz o bug relatado: com o Chrome minimizado, um lembrete das 11:18 só
+    // notificava ao voltar para a aba (quando entrava o catch-up de 5 min), em vez de
+    // disparar em poucos segundos como com a aba visível. A causa era
+    // handleVisibilityChange(false) chamando clearIntervalFn e zerando this.timer.
+    let now = new Date("2024-01-08T13:29:50.000Z");
+    const notifications = [];
+    let activeIntervals = 0;
+    let tick = null;
+    class MockNotification { constructor(_title, options) { notifications.push(options); } }
+    const scheduler = new ReminderNotificationScheduler({
+        userId: 8, notification: MockNotification, storage: null, onNavigate() {}, now: () => now,
+        setIntervalFn: (callback) => { activeIntervals += 1; tick = callback; return 1; },
+        clearIntervalFn: () => { activeIntervals -= 1; }
+    });
+    scheduler.setReminders([active(21, ["10:30"])]);
+    scheduler.start();
+    assert.equal(activeIntervals, 1);
+
+    scheduler.handleVisibilityChange(false); // aba escondida
+    assert.equal(activeIntervals, 1, "o polling de 15s não pode parar com a aba escondida");
+
+    now = new Date("2024-01-08T13:30:03.000Z"); // o horário do lembrete chega com a aba ainda escondida
+    tick(); // simula o próprio setInterval disparando em segundo plano (navegador só reduz a frequência, não zera)
+    assert.equal(notifications.length, 1, "deve notificar sem esperar o usuário voltar o foco");
+    scheduler.stop();
+});
+
 test("retomada após voltar de aba em segundo plano notifica no máximo uma vez dentro da tolerância", () => {
     let now = new Date("2024-01-08T13:29:50.000Z");
     const notifications = [];
@@ -273,12 +301,38 @@ test("retomada após voltar de aba em segundo plano notifica no máximo uma vez 
     scheduler.setReminders([active(7, ["10:30"])]);
     scheduler.start();
     scheduler.handleVisibilityChange(false);
-    assert.equal(activeIntervals, 0);
     now = new Date("2024-01-08T13:33:00.000Z");
     scheduler.handleVisibilityChange(true);
     scheduler.handleVisibilityChange(true);
     assert.equal(notifications.length, 1);
     assert.equal(activeIntervals, 1);
+    scheduler.stop();
+});
+
+test("aba congelada (computador dormiu) por 20 min: ao voltar não dispara lembrete vencido há mais de 5 min", () => {
+    // Enquanto a aba está congelada, nenhum setInterval roda de verdade (nem o nosso,
+    // nem o do navegador) — o teste simula isso simplesmente avançando `now` sem
+    // chamar `check()`/tick nenhuma vez nesse intervalo, exatamente como aconteceria
+    // numa suspensão real do sistema.
+    let now = new Date("2024-01-08T13:10:00.000Z");
+    const notifications = [];
+    class MockNotification { constructor(_title, options) { notifications.push(options); } }
+    const scheduler = new ReminderNotificationScheduler({
+        userId: 9, notification: MockNotification, storage: null, onNavigate() {}, now: () => now,
+        setIntervalFn: () => 1, clearIntervalFn() {}
+    });
+    scheduler.setReminders([active(33, ["10:15"])]); // 13:15 UTC, cairia bem no meio do congelamento
+    scheduler.start();
+    scheduler.handleVisibilityChange(false);
+
+    now = new Date("2024-01-08T13:30:00.000Z"); // "descongela" 20 min depois, 15 min após o horário do lembrete
+    scheduler.handleVisibilityChange(true);
+    assert.equal(notifications.length, 0, "não deve notificar um lembrete vencido há mais de 5 min");
+
+    // E o mesmo lembrete nunca deve disparar depois, fora da janela:
+    now = new Date("2024-01-08T13:30:20.000Z");
+    scheduler.check();
+    assert.equal(notifications.length, 0);
     scheduler.stop();
 });
 
@@ -317,6 +371,24 @@ test("falha ao criar notificação não marca ocorrência como entregue e permit
     scheduler.setReminders([active(9, ["10:30"])]); scheduler.start();
     scheduler.check();
     assert.equal(attempts, 2);
+    scheduler.stop();
+});
+
+test("new Notification() indisponível em runtime (ex.: Chrome Android exige Service Worker) aciona onDeliveryError sem travar o agendador", () => {
+    let now = new Date("2024-01-08T13:30:00.000Z");
+    class UnsupportedNotification { constructor() { throw new TypeError("Illegal constructor"); } }
+    const errors = [];
+    const scheduler = new ReminderNotificationScheduler({
+        userId: 1, notification: UnsupportedNotification, storage: null, onNavigate() {}, now: () => now,
+        onDeliveryError: (error) => errors.push(error),
+        setIntervalFn: () => 1, clearIntervalFn() {}
+    });
+    scheduler.setReminders([active(9, ["10:30"])]);
+    scheduler.start(); // já tenta e falha uma vez (start() chama check() imediatamente)
+    assert.doesNotThrow(() => scheduler.check()); // segunda tentativa (ainda pendente), também falha
+    assert.equal(errors.length, 2);
+    assert.ok(errors.every((error) => error instanceof TypeError));
+    assert.equal(errors[0].message, "Illegal constructor");
     scheduler.stop();
 });
 

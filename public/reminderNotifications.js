@@ -161,7 +161,9 @@ function readDelivered(storage, userId) {
 export class ReminderNotificationScheduler {
     constructor({
         userId, timezone = DEFAULT_REMINDER_TIME_ZONE, notification, storage, onNavigate,
+        onDeliveryError,
         now = () => new Date(),
+        visibilityState = () => (typeof document !== "undefined" ? document.visibilityState : "visible"),
         // Nunca `setIntervalFn = setInterval` (e o mesmo para clearInterval): guardar a
         // função nativa como propriedade e chamá-la como `this.setIntervalFn(...)` invoca
         // setInterval com `this` = a instância do agendador, não a Window, e o Chromium
@@ -175,7 +177,9 @@ export class ReminderNotificationScheduler {
         this.notification = notification;
         this.storage = storage;
         this.onNavigate = onNavigate;
+        this.onDeliveryError = onDeliveryError;
         this.now = now;
+        this.visibilityState = visibilityState;
         this.setIntervalFn = setIntervalFn;
         this.clearIntervalFn = clearIntervalFn;
         this.reminders = [];
@@ -201,11 +205,12 @@ export class ReminderNotificationScheduler {
     }
 
     handleVisibilityChange(isVisible) {
-        if (!isVisible) {
-            if (this.timer !== null) this.clearIntervalFn(this.timer);
-            this.timer = null;
-            return;
-        }
+        // Antes, ficar com a aba escondida parava o setInterval (abaixo) até o usuário
+        // voltar o foco — por isso um lembrete podia atrasar minutos: só disparava no
+        // "recheck" ao focar a aba. O polling de 15s deve continuar em segundo plano
+        // (os navegadores já reduzem a frequência de timers escondidos por conta própria,
+        // não precisamos fazer isso manualmente); ao voltar, só adiantamos a checagem.
+        if (!isVisible) return;
         if (this.lastCheck === null) this.lastCheck = this.now().getTime() - MAX_CATCH_UP_MS;
         this.check();
         if (this.timer === null) this.timer = this.setIntervalFn(() => this.check(), 15_000);
@@ -262,6 +267,10 @@ export class ReminderNotificationScheduler {
                     this.pending.add(occurrence.key);
                     /* Uma falha ao criar a notificação não é registrada como entrega. */
                     if (debug) console.debug("[MediBot] falha ao exibir notificação", { reminderId: Number(reminder.id), error: String(error) });
+                    // `new Notification()` pode lançar mesmo com permissão concedida (ex.:
+                    // Chrome Android exige Service Worker); avisa quem criou o agendador
+                    // para ele não continuar anunciando notificações como "ativas".
+                    this.onDeliveryError?.(error);
                 }
             }
         }
@@ -271,6 +280,7 @@ export class ReminderNotificationScheduler {
             const horaAtual = `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}:${String(parts.second).padStart(2, "0")}`;
             console.debug("[MediBot] agendador de lembretes", {
                 horaAtual: `${horaAtual} (${this.timezone})`,
+                visibilityState: this.visibilityState(),
                 totalLembretesAtivos: this.reminders.length,
                 chavesJaEntregues: [...this.delivered],
                 decisoes: decisions
@@ -281,7 +291,7 @@ export class ReminderNotificationScheduler {
 
 export function startReminderSchedulerIfAllowed({
     scheduler, userId, timezone = DEFAULT_REMINDER_TIME_ZONE, notification, isSecureContext, storage,
-    reminders, onNavigate, now, setIntervalFn, clearIntervalFn
+    reminders, onNavigate, onDeliveryError, now, visibilityState, setIntervalFn, clearIntervalFn
 }) {
     if (getNotificationAvailability({ notification, isSecureContext }) !== "enabled" || !Number.isSafeInteger(userId) || userId <= 0) {
         scheduler?.stop();
@@ -291,7 +301,7 @@ export function startReminderSchedulerIfAllowed({
     if (scheduler && !matchesCurrent) scheduler.stop();
     const activeScheduler = matchesCurrent
         ? scheduler
-        : new ReminderNotificationScheduler({ userId, timezone, notification, storage, onNavigate, now, setIntervalFn, clearIntervalFn });
+        : new ReminderNotificationScheduler({ userId, timezone, notification, storage, onNavigate, onDeliveryError, now, visibilityState, setIntervalFn, clearIntervalFn });
     activeScheduler.setReminders(reminders);
     activeScheduler.start();
     return activeScheduler;

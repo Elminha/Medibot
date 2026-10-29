@@ -1030,8 +1030,19 @@ const notificationTestButton = document.querySelector("#notification-test-button
 // Carregamento (requisição) e permissão são dois eixos independentes: a permissão
 // pode estar concedida e, ainda assim, o carregamento dos lembretes falhar (e
 // vice-versa). Misturar os dois numa única mensagem foi a causa do card "preso".
-let reminderLoadState = "idle"; // idle | loading | loaded | error
+// "unsupported": permissão concedida mas `new Notification()` lança ao tentar
+// exibir (ex.: Chrome Android exige Service Worker, iOS exige instalar como app).
+let reminderLoadState = "idle"; // idle | loading | loaded | error | unsupported
 let currentReminders = [];
+
+// Uma vez detectado que este navegador não consegue de fato exibir notificações
+// (apesar de permissão concedida), não vale a pena insistir: ficaria tentando a
+// cada 15s e nunca entregaria nada.
+function handleNotificationDeliveryUnsupported() {
+    stopReminderScheduler();
+    reminderLoadState = "unsupported";
+    renderNotificationCard();
+}
 
 function stopReminderNotifications() {
     notificationScheduler?.stop();
@@ -1107,6 +1118,9 @@ function renderNotificationCard() {
         notificationButton.disabled = false;
         notificationButton.textContent = "Tentar novamente";
         notificationStatus.textContent = "Permissão concedida, mas não foi possível iniciar as notificações agora.";
+    } else if (reminderLoadState === "unsupported") {
+        notificationButton.hidden = true;
+        notificationStatus.textContent = "Este dispositivo não permite notificações do navegador. Em breve você poderá receber lembretes pelo Telegram.";
     } else if (reminderLoadState === "loaded") {
         notificationButton.hidden = true;
         notificationStatus.textContent = "Notificações ativas";
@@ -1166,7 +1180,8 @@ function initializeReminderScheduler(reminders) {
         isSecureContext: window.isSecureContext,
         storage: window.localStorage,
         reminders,
-        onNavigate: () => setView("reminders")
+        onNavigate: () => setView("reminders"),
+        onDeliveryError: handleNotificationDeliveryUnsupported
     });
     return notificationScheduler;
 }
@@ -1217,7 +1232,8 @@ notificationTestButton.addEventListener("click", () => {
         notification.onclick = () => { setView("reminders"); notification.close?.(); };
     } catch (error) {
         console.error("Falha ao enviar notificação de teste:", error);
-        showToast("Não foi possível enviar a notificação de teste neste navegador.", "error");
+        showToast("Este dispositivo não permite notificações do navegador. Em breve você poderá receber lembretes pelo Telegram.", "error");
+        handleNotificationDeliveryUnsupported();
     }
 });
 
@@ -1226,10 +1242,9 @@ renderNotificationCard();
 // A permissão pode mudar fora do app (ícone de site nas configurações do navegador)
 // enquanto a aba está aberta: ao voltar o foco, relemos Notification.permission.
 function recheckPermissionOnFocus() {
-    if (document.visibilityState !== "visible") {
-        notificationScheduler?.handleVisibilityChange(false);
-        return;
-    }
+    // Esconder a aba não pausa mais o agendador (reminderNotifications.js), então não
+    // há nada a fazer aqui além de não disparar a sincronização de "voltou o foco".
+    if (document.visibilityState !== "visible") return;
     if (!Number.isSafeInteger(currentAuthUserId)) return;
     const kind = permissionKind();
     if (kind !== "granted") {
@@ -1238,6 +1253,9 @@ function recheckPermissionOnFocus() {
         renderNotificationCard();
         return;
     }
+    // "unsupported" é terminal para a sessão: já vimos new Notification() falhar
+    // aqui, então não vale reiniciar o agendador a cada vez que a aba volta a ter foco.
+    if (reminderLoadState === "unsupported") return;
     if (reminderLoadState !== "loaded" && reminderLoadState !== "loading") {
         loadReminderDataForScheduler();
         return;
