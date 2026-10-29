@@ -22,9 +22,6 @@
     --disabled-bg: #e3ece7;
     --disabled-text: #8da299;
     --header-bg: rgba(255, 255, 255, .92);
-    /* Fundo do segmento focado em input[type=time|date] nativo: --primary a ~25% de
-       opacidade composta sobre --surface. #c1ded9 com texto --text (#15271f) = 10,97:1. */
-    --field-focus-bg: rgba(8, 124, 104, .25);
 
     --shadow-sm: 0 2px 8px rgba(18, 48, 40, .06);
     --shadow-md: 0 10px 28px rgba(18, 48, 40, .1);
@@ -74,9 +71,6 @@
     --disabled-bg: #222c2f;
     --disabled-text: #5f7571;
     --header-bg: rgba(23, 31, 34, .88);
-    /* --primary a ~25% sobre --surface neste tema: #1e4a42 com texto --text
-       (#e8f1ee) = 8,63:1. */
-    --field-focus-bg: rgba(52, 201, 163, .25);
 
     --shadow-sm: 0 2px 10px rgba(0, 0, 0, .35);
     --shadow-md: 0 14px 34px rgba(0, 0, 0, .45);
@@ -363,6 +357,71 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 #notification-status[data-state="enabled"] { color: var(--primary); }
 #notification-status[data-state="blocked"] { color: var(--danger); }
 #notification-status[data-state="pending"] { color: var(--text-muted); }
+#notification-unsupported-retry { margin-top: 4px; font-size: .82rem; }
+
+/* O ⓘ só existe visualmente no estado compacto ("Notificações ativas"); nos demais
+   estados o wrapper é "display: contents" e o <p> de dentro flui normal, igual
+   antes (texto completo abaixo do status, sem balão). */
+.info-tooltip { display: contents; }
+.info-icon-button { display: none; }
+.notification-settings.compact .info-tooltip {
+    display: inline-flex; position: relative; margin-left: 6px; vertical-align: middle;
+}
+.notification-settings.compact .info-icon-button {
+    display: grid; place-items: center; width: 20px; height: 20px; min-height: 0; padding: 0;
+    border: 1px solid var(--border); border-radius: 50%; background: var(--surface);
+    color: var(--text-muted); font-size: .72rem; line-height: 1; cursor: help;
+    transition: border-color var(--transition), color var(--transition);
+}
+.notification-settings.compact .info-icon-button:hover,
+.notification-settings.compact .info-icon-button:focus-visible { border-color: var(--primary); color: var(--primary); }
+.notification-settings.compact .notification-limit {
+    /* Abre para baixo, não para cima: o card fica perto do topo do painel (que tem
+       overflow:auto), então abrir para cima corre o risco de ser cortado. */
+    position: absolute; z-index: 5; top: calc(100% + 8px); left: 0; margin: 0;
+    width: min(260px, 70vw); border: 1px solid var(--border-soft); border-radius: var(--radius-sm);
+    background: var(--surface); box-shadow: var(--shadow-md); padding: 10px 12px;
+    color: var(--text); font-size: .78rem; line-height: 1.45;
+    opacity: 0; visibility: hidden; transform: translateY(-4px); pointer-events: none;
+    transition: opacity var(--transition), transform var(--transition), visibility var(--transition);
+}
+.notification-settings.compact .info-tooltip:hover .notification-limit,
+.notification-settings.compact .info-tooltip:focus-within .notification-limit,
+.notification-settings.compact .info-tooltip[data-open="true"] .notification-limit {
+    opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto;
+}
+
+/* ===== Layout de Lembretes: formulário + lista =====
+   Telas largas (>= 1100px): duas colunas lado a lado, cada uma com rolagem própria.
+   Abaixo disso ("celular", inclui tablet estreito): uma coluna só, lista primeiro
+   e formulário recolhido atrás do botão "+ Novo lembrete" (ver reminder-wizard-
+   toggle e reminder-wizard.collapsed abaixo). */
+.reminders-columns { display: flex; flex-direction: column; gap: var(--space-4); }
+.reminders-columns > .reminder-list { order: 1; }
+.reminder-wizard-toggle { display: none; order: 2; width: 100%; }
+.reminders-columns > .reminder-wizard { order: 3; }
+@media (max-width: 1099.98px) {
+    .reminder-wizard-toggle { display: inline-flex; }
+    .reminder-wizard.collapsed { display: none; }
+}
+@media (min-width: 1100px) {
+    .reminders-columns {
+        display: grid; grid-template-columns: minmax(340px, 1fr) minmax(360px, 1.2fr);
+        align-items: start; gap: var(--space-5);
+    }
+    /* "order" (usado para reordenar no celular) também muda a ordem de posição
+       automática no grid, então fixamos a coluna de cada um explicitamente em vez
+       de confiar na ordem do DOM: formulário sempre à esquerda, lista à direita. */
+    .reminders-columns > .reminder-wizard, .reminders-columns > .reminder-list {
+        order: 0; max-height: calc(100vh - 260px); min-height: 200px; overflow-y: auto;
+    }
+    .reminders-columns > .reminder-wizard { grid-column: 1; }
+    .reminders-columns > .reminder-list { grid-column: 2; }
+    .reminder-wizard-toggle { display: none; }
+    /* O CSS acima ignora .collapsed nesta largura: form e lista ficam sempre
+       visíveis lado a lado, então a classe (só relevante no celular) não precisa
+       de regra alguma aqui. */
+}
 
 /* ===== Reminder wizard (criar/editar, reaproveitado para os dois) ===== */
 .reminder-wizard { margin-bottom: 16px; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-2); padding: var(--space-4); }
@@ -387,16 +446,44 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .wizard-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .wizard-soon { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
 
-.wizard-time-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.wizard-time-row { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); padding: 4px 4px 4px 10px; }
-.wizard-time-row input[type="time"] { border: 0; background: transparent; color: var(--text); font-size: .9rem; min-height: 32px; }
-.wizard-time-row .icon-button { width: 30px; height: 30px; }
+.wizard-time-list { display: flex; flex-wrap: wrap; gap: 10px; }
+.wizard-time-row { display: inline-flex; align-items: flex-start; gap: 6px; }
+.wizard-time-row .icon-button { flex: none; width: 38px; height: 44px; }
+
+/* Campo de horário com máscara (substitui o <input type="time"> nativo): o
+   <input> herda a aparência padrão dos demais campos (borda, raio, fundo, anel de
+   foco) do seletor genérico "input, textarea, select" no topo deste arquivo. */
+.time-field { display: flex; flex-direction: column; }
+.time-field-input {
+    width: 4.6em; min-height: 44px; padding: 10px 8px; text-align: center;
+    font-size: 1rem; font-variant-numeric: tabular-nums; letter-spacing: .03em;
+    caret-color: var(--primary);
+}
+
+/* Campo "Data de início" com máscara DD/MM/AAAA + botão de calendário (abre o
+   <input type="date"> oculto via showPicker(), ver app.js). */
+.date-field { display: flex; align-items: center; gap: 6px; }
+.date-field input[type="text"] { min-height: 44px; caret-color: var(--primary); }
+.calendar-button { flex: none; width: 44px; height: 44px; border: 1px solid var(--border); }
+.calendar-button:hover { border-color: var(--primary); }
+.calendar-button svg { width: 18px; height: 18px; }
+/* Mantido "renderizado" (nunca display:none/visibility:hidden): showPicker() exige
+   isso, mesmo que o campo não deva aparecer para quem usa o mouse/dedo. */
+.visually-hidden-field {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+    opacity: 0; overflow: hidden; pointer-events: none;
+}
+
+.field-error-message { margin: 4px 0 0; color: var(--danger); font-size: .76rem; line-height: 1.35; }
+.field-error-message[hidden] { display: none; }
 
 .wizard-weekday-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 
 .wizard-duration-fields { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: 4px; }
 .wizard-duration-fields label { display: flex; flex-direction: column; gap: 5px; color: var(--text); font-size: .82rem; font-weight: 650; }
 
+.wizard-summary-block { margin: 0; }
+.wizard-summary-label { display: block; margin: 0 0 4px; color: var(--text-muted); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .wizard-summary { margin: 0; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--surface); padding: 10px 13px; color: var(--text-muted); font-size: .84rem; line-height: 1.45; }
 
 /* ===== Telegram ===== */
@@ -414,6 +501,13 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 #telegram-status[data-state="linked"] { color: var(--primary); }
 #telegram-status[data-state="expired"] { color: var(--danger); }
 #telegram-open-link { text-decoration: none; }
+
+/* Destaque quando detectamos que notificações do navegador não vão funcionar
+   neste dispositivo: Telegram passa a ser o jeito recomendado de receber avisos. */
+.telegram-card.telegram-highlight { border-color: var(--primary); background: var(--primary-soft); }
+.telegram-card.telegram-highlight #telegram-connect-button {
+    box-shadow: 0 0 0 3px var(--primary-soft-strong);
+}
 
 @media (max-width: 760px) {
     .telegram-card .telegram-actions { align-items: stretch; width: 100%; }
@@ -511,10 +605,10 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .notification-settings.compact .notification-copy h3 { display: none; }
 .notification-settings.compact #notification-status { display: inline-flex; align-items: center; gap: 7px; font-weight: 650; }
 .notification-settings.compact #notification-status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
-.notification-settings.compact .notification-limit {
-    display: inline-block; max-width: 1px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-    color: var(--text-muted); font-size: 0; margin: 0;
-}
+/* O balão do ⓘ (.notification-settings.compact .notification-limit) é definido
+   junto com o resto do tooltip, lá em cima em "===== Notifications =====": ele
+   precisa de position:absolute (não max-width:1px) para o card encolher para a
+   altura do conteúdo sem deixar a faixa vazia que o aviso ocupava antes. */
 .notification-next { margin: 4px 0 0; color: var(--text-muted); font-size: .8rem; font-weight: 600; }
 #notification-test-button { flex: none; }
 
@@ -528,33 +622,3 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 
 /* ===== Dica do modo "de X em X horas" ===== */
 .wizard-hint { margin: 2px 0 0; color: var(--text-muted); font-size: .78rem; line-height: 1.4; }
-
-/* ===== Campos nativos de hora/data: visual discreto (sem o bloco azul do Chromium) ===== */
-input[type="time"], input[type="date"] {
-    /* Sem color-scheme aqui: herda de :root/[data-theme="dark"], então o próprio tema
-       escolhido pelo app decide as partes nativas não cobertas pelos seletores abaixo
-       (ex.: separadores), em vez de depender do tema do sistema operacional. */
-    caret-color: var(--primary);
-}
-input[type="time"]::-webkit-datetime-edit-fields-wrapper,
-input[type="date"]::-webkit-datetime-edit-fields-wrapper { background: transparent; }
-input[type="time"]::-webkit-datetime-edit-hour-field,
-input[type="time"]::-webkit-datetime-edit-minute-field,
-input[type="time"]::-webkit-datetime-edit-ampm-field,
-input[type="date"]::-webkit-datetime-edit-day-field,
-input[type="date"]::-webkit-datetime-edit-month-field,
-input[type="date"]::-webkit-datetime-edit-year-field {
-    background: transparent; border-radius: 3px; padding: 0 1px;
-}
-input[type="time"]::-webkit-datetime-edit-hour-field:focus,
-input[type="time"]::-webkit-datetime-edit-minute-field:focus,
-input[type="time"]::-webkit-datetime-edit-ampm-field:focus,
-input[type="date"]::-webkit-datetime-edit-day-field:focus,
-input[type="date"]::-webkit-datetime-edit-month-field:focus,
-input[type="date"]::-webkit-datetime-edit-year-field:focus {
-    /* Precisa ser uma cor real (não "transparent"): só assim sobrepõe de verdade o
-       destaque azul padrão do Chromium no segmento ativo. Contraste calculado contra
-       --text nos dois temas, ver os comentários de --field-focus-bg acima. */
-    background-color: var(--field-focus-bg);
-    outline: none; color: var(--text);
-}

@@ -2,6 +2,48 @@ export const DEFAULT_REMINDER_TIME_ZONE = "America/Sao_Paulo";
 const STORAGE_PREFIX = "medibot_delivered_reminders_v1";
 const STORAGE_LIMIT = 500;
 const MAX_CATCH_UP_MS = 5 * 60_000;
+const NOTIFICATIONS_UNSUPPORTED_STORAGE_KEY = "medibotNotificationsUnsupported";
+
+/**
+ * Casos conhecidos em que `new Notification()` não funciona mesmo com permissão
+ * concedida: Chrome Android exige Service Worker (showNotification, não o
+ * construtor), e Safari/iOS só libera notificação de site instalado como app. Não
+ * precisa ser exaustivo — é só para abrir direto no estado "sem suporte" (ver
+ * reminderNotificationsUnsupportedFlag abaixo), sem a volta de clicar "Ativar
+ * notificações" e descobrir que não funciona.
+ */
+export function isLikelyUnsupportedNotificationUserAgent(userAgent) {
+    return typeof userAgent === "string" && /android|iphone|ipad|ipod/i.test(userAgent);
+}
+
+/**
+ * localStorage já é isolado por origem, então não há "chave por origem" além do
+ * próprio localStorage do navegador: isso só embrulha getItem/setItem/removeItem
+ * em try/catch (localStorage pode lançar em modo privado em alguns navegadores).
+ */
+export function readNotificationsUnsupportedFlag(storage) {
+    try {
+        return storage?.getItem(NOTIFICATIONS_UNSUPPORTED_STORAGE_KEY) === "1";
+    } catch {
+        return false;
+    }
+}
+
+export function writeNotificationsUnsupportedFlag(storage) {
+    try {
+        storage?.setItem(NOTIFICATIONS_UNSUPPORTED_STORAGE_KEY, "1");
+    } catch {
+        /* Sem localStorage disponível: só não persiste entre recargas desta sessão. */
+    }
+}
+
+export function clearNotificationsUnsupportedFlag(storage) {
+    try {
+        storage?.removeItem(NOTIFICATIONS_UNSUPPORTED_STORAGE_KEY);
+    } catch {
+        /* idem */
+    }
+}
 
 export function getTimezoneParts(date, timezone) {
     const values = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {

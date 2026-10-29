@@ -1,16 +1,28 @@
 import {
+    clearNotificationsUnsupportedFlag,
     DEFAULT_REMINDER_TIME_ZONE,
     getNextOccurrence,
     getTimezoneParts,
-    startReminderSchedulerIfAllowed
+    isLikelyUnsupportedNotificationUserAgent,
+    readNotificationsUnsupportedFlag,
+    startReminderSchedulerIfAllowed,
+    writeNotificationsUnsupportedFlag
 } from "./reminderNotifications.js";
 import {
+    brDateToIso,
     computeEndsOn,
     countDaysInclusive,
+    formatDateBr,
     generateEvenlySpacedTimes,
     generateIntervalTimes,
+    isValidBrDate,
+    isValidTimeString,
     MAX_TIMES_PER_REMINDER,
+    maskDateTyping,
+    maskTimeTyping,
+    normalizeTypedTime,
     recalculateIntervalTimes,
+    stepTimeValue,
     summarizeReminder,
     summarizeSchedule
 } from "./reminderWizard.js";
@@ -392,9 +404,10 @@ function showApplication(user) {
     renderTelegramLinked(Boolean(user.telegramLinked));
     if (!user.telegramLinked) restoreTelegramCodeFromStorage();
     const notificationAlreadyGranted = permissionKind() === "granted";
+    const knownUnsupported = applyKnownNotificationUnsupportedState();
     renderNotificationCard();
 
-    const reminderLoad = notificationAlreadyGranted ? loadReminderDataForScheduler() : loadReminders();
+    const reminderLoad = (notificationAlreadyGranted && !knownUnsupported) ? loadReminderDataForScheduler() : loadReminders();
     // try/catch (não só .then) garante que o card de notificações nunca fique preso:
     // qualquer falha, mesmo inesperada, cai no catch e devolve um estado clicável de
     // novo ("Tentar novamente"), em vez de ficar travado num texto de carregamento.
@@ -589,13 +602,21 @@ const wizardWeekdayList = document.querySelector("#wizard-weekday-list");
 const wizardDurationModeOptions = document.querySelector("#wizard-duration-mode-options");
 const wizardDurationFields = document.querySelector("#wizard-duration-fields");
 const wizardDurationDaysInput = document.querySelector("#wizard-duration-days");
+// Fonte da verdade (ISO "YYYY-MM-DD"), nunca editado diretamente pelo usuário: o
+// campo visível é o texto mascarado "DD/MM/AAAA" abaixo, sincronizado com este.
 const wizardStartsOnInput = document.querySelector("#wizard-starts-on");
+const wizardStartsOnDisplay = document.querySelector("#wizard-starts-on-text");
+const wizardStartsOnError = document.querySelector("#wizard-starts-on-error");
+const wizardStartsOnCalendarButton = document.querySelector("#wizard-starts-on-calendar-button");
+const wizardStartsOnNativeInput = document.querySelector("#wizard-starts-on-native");
 const wizardSummary = document.querySelector("#wizard-summary");
 const reminderFeedback = document.querySelector("#reminder-feedback");
+const remindersColumns = document.querySelector("#reminders-columns");
+const reminderWizardToggle = document.querySelector("#reminder-wizard-toggle");
+const reminderWizard = document.querySelector("#reminder-wizard");
 const reminderList = document.querySelector("#reminder-list");
 const wizardSaveButton = document.querySelector("#wizard-save-button");
 const wizardCancelButton = document.querySelector("#wizard-cancel-button");
-const REMINDER_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 let currentMedications = [];
 let currentReminderTimezone = DEFAULT_REMINDER_TIME_ZONE;
 let editingReminderId = null;
@@ -943,7 +964,7 @@ function renderReminders(reminders) {
                 : "Cadastre um medicamento para criar lembretes.",
             currentMedications.length ? "Adicionar lembrete" : "Ir para Medicamentos",
             currentMedications.length
-                ? () => wizardMedicationInput.focus()
+                ? () => { setReminderWizardExpanded(true); wizardMedicationInput.focus(); }
                 : () => setView("medications")
         );
         empty.className = "reminder-state";
@@ -1026,6 +1047,10 @@ const notificationStatus = document.querySelector("#notification-status");
 const notificationCard = document.querySelector("#notification-card");
 const notificationNext = document.querySelector("#notification-next");
 const notificationTestButton = document.querySelector("#notification-test-button");
+const notificationUnsupportedRetry = document.querySelector("#notification-unsupported-retry");
+const notificationInfoWrapper = document.querySelector("#notification-info-wrapper");
+const notificationInfoButton = document.querySelector("#notification-info-button");
+const telegramCard = document.querySelector("#telegram-card");
 
 // Carregamento (requisição) e permissão são dois eixos independentes: a permissão
 // pode estar concedida e, ainda assim, o carregamento dos lembretes falhar (e
@@ -1035,10 +1060,36 @@ const notificationTestButton = document.querySelector("#notification-test-button
 let reminderLoadState = "idle"; // idle | loading | loaded | error | unsupported
 let currentReminders = [];
 
+// true só enquanto dura a tentativa aberta pelo link "Tentar novamente": ignora o
+// flag salvo e a detecção por user agent por uma vez, mesmo em Android/iPhone/iPad,
+// para o usuário poder checar de novo (ex.: instalou o site como app no iOS).
+let notificationUnsupportedRetryInProgress = false;
+
+/** true quando já sabemos (por uma falha salva ou pelo user agent) que este
+ * navegador não consegue mostrar notificações de verdade, mesmo com permissão. */
+function shouldShowNotificationsUnsupported() {
+    if (notificationUnsupportedRetryInProgress) return false;
+    return readNotificationsUnsupportedFlag(window.localStorage)
+        || isLikelyUnsupportedNotificationUserAgent(navigator.userAgent);
+}
+
+/** Decide, antes de tentar carregar qualquer coisa, se já devemos abrir no estado
+ * "unsupported" — evita pedir permissão ou iniciar o agendador à toa. */
+function applyKnownNotificationUnsupportedState() {
+    const kind = permissionKind();
+    if (kind === "insecure" || kind === "unsupported" || kind === "denied") return false;
+    if (!shouldShowNotificationsUnsupported()) return false;
+    reminderLoadState = "unsupported";
+    return true;
+}
+
 // Uma vez detectado que este navegador não consegue de fato exibir notificações
 // (apesar de permissão concedida), não vale a pena insistir: ficaria tentando a
-// cada 15s e nunca entregaria nada.
+// cada 15s e nunca entregaria nada. Persiste em localStorage para já abrir direto
+// nesse estado nas próximas vezes (sem o usuário ter que descobrir de novo).
 function handleNotificationDeliveryUnsupported() {
+    notificationUnsupportedRetryInProgress = false;
+    writeNotificationsUnsupportedFlag(window.localStorage);
     stopReminderScheduler();
     reminderLoadState = "unsupported";
     renderNotificationCard();
@@ -1089,8 +1140,17 @@ function updateNextReminderLine() {
 function renderNotificationCard() {
     const kind = permissionKind();
     const active = kind === "granted" && reminderLoadState === "loaded";
+    const flaggedUnsupported = reminderLoadState === "unsupported" && kind !== "insecure" && kind !== "unsupported" && kind !== "denied";
     notificationCard.classList.toggle("compact", active);
     notificationTestButton.hidden = !active;
+    notificationUnsupportedRetry.hidden = !flaggedUnsupported;
+    // Com permissão concedida mas sem suporte real, "Conectar Telegram" é o jeito
+    // recomendado de receber os lembretes; só faz sentido destacar se o botão de
+    // conectar ainda estiver visível (telegram já vinculado não precisa de destaque).
+    // Busca o botão na hora (em vez de guardar a const de módulo): esta função já
+    // roda antes de "const telegramConnectButton" mais abaixo no arquivo existir.
+    const telegramConnectButtonEl = telegramCard.querySelector("#telegram-connect-button");
+    telegramCard.classList.toggle("telegram-highlight", flaggedUnsupported && telegramConnectButtonEl && !telegramConnectButtonEl.hidden);
 
     if (kind === "insecure") {
         notificationButton.hidden = false;
@@ -1105,6 +1165,9 @@ function renderNotificationCard() {
     } else if (kind === "denied") {
         notificationButton.hidden = true;
         notificationStatus.textContent = "Permissão negada. Para ativar, clique no ícone ao lado do endereço do site e permita notificações.";
+    } else if (flaggedUnsupported) {
+        notificationButton.hidden = true;
+        notificationStatus.textContent = "Este dispositivo não permite notificações do navegador. Em breve você poderá receber lembretes pelo Telegram.";
     } else if (kind === "default") {
         notificationButton.hidden = false;
         notificationButton.disabled = false;
@@ -1118,9 +1181,6 @@ function renderNotificationCard() {
         notificationButton.disabled = false;
         notificationButton.textContent = "Tentar novamente";
         notificationStatus.textContent = "Permissão concedida, mas não foi possível iniciar as notificações agora.";
-    } else if (reminderLoadState === "unsupported") {
-        notificationButton.hidden = true;
-        notificationStatus.textContent = "Este dispositivo não permite notificações do navegador. Em breve você poderá receber lembretes pelo Telegram.";
     } else if (reminderLoadState === "loaded") {
         notificationButton.hidden = true;
         notificationStatus.textContent = "Notificações ativas";
@@ -1132,6 +1192,33 @@ function renderNotificationCard() {
     }
     updateNextReminderLine();
 }
+
+notificationUnsupportedRetry.addEventListener("click", () => {
+    clearNotificationsUnsupportedFlag(window.localStorage);
+    notificationUnsupportedRetryInProgress = true;
+    reminderLoadState = "idle";
+    renderNotificationCard();
+    if (permissionKind() === "granted") loadReminderDataForScheduler();
+});
+
+// Tooltip do ⓘ: hover/foco já mostram via CSS (:hover/:focus-within no
+// styles.css); o clique/toque aqui é só para quem não tem hover (touch) e para
+// fechar ao tocar fora ou pressionar Esc.
+notificationInfoButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const isOpen = notificationInfoWrapper.getAttribute("data-open") === "true";
+    notificationInfoWrapper.setAttribute("data-open", String(!isOpen));
+    notificationInfoButton.setAttribute("aria-expanded", String(!isOpen));
+});
+document.addEventListener("click", () => {
+    notificationInfoWrapper.removeAttribute("data-open");
+    notificationInfoButton.setAttribute("aria-expanded", "false");
+});
+document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    notificationInfoWrapper.removeAttribute("data-open");
+    notificationInfoButton.setAttribute("aria-expanded", "false");
+});
 
 async function loadReminderDataForScheduler() {
     reminderLoadState = "loading";
@@ -1151,7 +1238,7 @@ async function loadReminderDataForScheduler() {
 }
 
 async function requestNotificationPermissionAndLoad() {
-    if (permissionKind() !== "default") {
+    if (permissionKind() !== "default" || applyKnownNotificationUnsupportedState()) {
         renderNotificationCard();
         return;
     }
@@ -1237,6 +1324,7 @@ notificationTestButton.addEventListener("click", () => {
     }
 });
 
+applyKnownNotificationUnsupportedState();
 renderNotificationCard();
 
 // A permissão pode mudar fora do app (ícone de site nas configurações do navegador)
@@ -1249,7 +1337,10 @@ function recheckPermissionOnFocus() {
     const kind = permissionKind();
     if (kind !== "granted") {
         stopReminderScheduler();
-        reminderLoadState = "idle";
+        // Não reseta se já sabemos (flag salva ou user agent) que este navegador não
+        // suporta notificações: "unsupported" é o estado certo mesmo sem permissão
+        // concedida ainda.
+        reminderLoadState = applyKnownNotificationUnsupportedState() ? "unsupported" : "idle";
         renderNotificationCard();
         return;
     }
@@ -1330,29 +1421,109 @@ function updateWizardIntervalHint() {
     }
 }
 
+/**
+ * Campo de horário com máscara própria (texto + dígitos), em vez do
+ * <input type="time"> nativo: no desktop o segmento focado ficava branco sobre
+ * branco nos dois temas, e no Chrome Android o seletor nativo cortava o botão
+ * "Definir" e o "Limpar" fechava o popup. A máscara/normalização/validação em si
+ * (maskTimeTyping, normalizeTypedTime, isValidTimeString, stepTimeValue) é testada
+ * como função pura em reminderWizard.js; isto aqui é só o encanamento do DOM.
+ */
+function createMaskedTimeInput({ value, ariaLabel, onCommit }) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "time-field";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "time-field-input";
+    input.inputMode = "numeric";
+    input.autocomplete = "off";
+    input.enterKeyHint = "done";
+    input.maxLength = 5;
+    input.placeholder = "HH:MM";
+    input.required = true;
+    input.setAttribute("aria-label", ariaLabel);
+    input.value = typeof value === "string" ? value : "";
+
+    const errorMessage = document.createElement("p");
+    errorMessage.className = "field-error-message";
+    errorMessage.textContent = "Use um horário entre 00:00 e 23:59";
+    errorMessage.hidden = true;
+
+    function setInvalid(isInvalid) {
+        input.classList.toggle("input-error", isInvalid);
+        input.setAttribute("aria-invalid", String(isInvalid));
+        errorMessage.hidden = !isInvalid;
+    }
+
+    // `fromStep` pula a normalização de dígitos: ArrowUp/Down e PageUp/Down (ver
+    // keydown abaixo) já entregam um "HH:MM" certo vindo de stepTimeValue.
+    function commitValue(nextValue, { fromStep = false } = {}) {
+        if (!nextValue) {
+            input.value = "";
+            setInvalid(false);
+            onCommit("", { invalid: false });
+            return;
+        }
+        const normalized = fromStep ? nextValue : normalizeTypedTime(nextValue);
+        if (!normalized) {
+            setInvalid(true);
+            onCommit(nextValue, { invalid: true });
+            return;
+        }
+        input.value = normalized;
+        const invalid = !isValidTimeString(normalized);
+        setInvalid(invalid);
+        onCommit(normalized, { invalid });
+    }
+
+    // Reaplicar a máscara move o cursor para o fim a cada tecla; aceitável aqui
+    // porque o campo só tem 5 caracteres e o uso típico é digitar do início ao fim.
+    input.addEventListener("input", () => {
+        input.value = maskTimeTyping(input.value);
+        setInvalid(false);
+    });
+    input.addEventListener("blur", () => commitValue(input.value));
+    input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            commitValue(input.value);
+        } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+            event.preventDefault();
+            commitValue(stepTimeValue(input.value, event.key === "ArrowUp" ? 1 : -1), { fromStep: true });
+        } else if (event.key === "PageUp" || event.key === "PageDown") {
+            event.preventDefault();
+            commitValue(stepTimeValue(input.value, event.key === "PageUp" ? 60 : -60), { fromStep: true });
+        }
+    });
+
+    wrapper.append(input, errorMessage);
+    return { wrapper, input };
+}
+
 function renderWizardTimeList() {
     wizardTimeList.replaceChildren();
     wizardTimes.forEach((time, index) => {
         const row = document.createElement("div");
         row.className = "wizard-time-row";
-        const input = document.createElement("input");
-        input.type = "time";
-        input.value = time;
-        input.required = true;
-        input.addEventListener("input", () => {
-            if (wizardIntervalHours !== null && REMINDER_TIME_PATTERN.test(input.value)) {
-                // Modo "de X em X horas": recalcula os demais mantendo o intervalo, sem
-                // reconstruir a lista (preserva o foco no campo que está sendo editado).
-                wizardTimes = recalculateIntervalTimes(wizardTimes, index, input.value, wizardIntervalHours);
-                wizardTimeList.querySelectorAll("input[type='time']").forEach((otherInput, otherIndex) => {
-                    if (otherIndex !== index) otherInput.value = wizardTimes[otherIndex];
-                });
-            } else {
-                wizardTimes[index] = input.value;
+        const field = createMaskedTimeInput({
+            value: time,
+            ariaLabel: `Horário ${index + 1}`,
+            onCommit: (value, { invalid }) => {
+                if (wizardIntervalHours !== null && !invalid && value) {
+                    // Modo "de X em X horas": recalcula os demais mantendo o intervalo, sem
+                    // reconstruir a lista (preserva o foco no campo que está sendo editado).
+                    wizardTimes = recalculateIntervalTimes(wizardTimes, index, value, wizardIntervalHours);
+                    wizardTimeList.querySelectorAll(".time-field-input").forEach((otherInput, otherIndex) => {
+                        if (otherIndex !== index) otherInput.value = wizardTimes[otherIndex];
+                    });
+                } else {
+                    wizardTimes[index] = value;
+                }
+                updateWizardSummary();
             }
-            updateWizardSummary();
         });
-        row.append(input);
+        row.append(field.wrapper);
         if (wizardTimes.length > 1) {
             const removeButton = document.createElement("button");
             removeButton.type = "button";
@@ -1376,12 +1547,44 @@ function renderWizardTimeList() {
 function updateWizardSummary() {
     const medicationOption = wizardMedicationInput.selectedOptions[0];
     const medicationName = medicationOption?.value ? medicationOption.textContent : "Selecione um medicamento";
-    const validTimes = wizardTimes.filter((time) => REMINDER_TIME_PATTERN.test(time));
+    const validTimes = wizardTimes.filter((time) => isValidTimeString(time));
     const weekdays = wizardDayMode === "custom" ? wizardWeekdays : [];
     const endsOn = wizardDurationMode === "days"
         ? computeEndsOn(wizardStartsOnInput.value || todayLocalDateInput(), Number(wizardDurationDaysInput.value))
         : null;
     wizardSummary.textContent = summarizeReminder({ medicationName, times: validTimes, weekdays, endsOn, status: "active" });
+}
+
+/**
+ * Único ponto que escreve a data de início: mantém o input oculto (ISO, valor
+ * interno/API) e o campo de texto visível (DD/MM/AAAA) sempre em sincronia.
+ */
+function setStartsOnIso(iso) {
+    wizardStartsOnInput.value = iso || "";
+    wizardStartsOnDisplay.value = iso ? formatDateBr(iso) : "";
+    wizardStartsOnDisplay.classList.remove("input-error");
+    wizardStartsOnError.hidden = true;
+}
+
+/** Ao sair do campo (blur) ou Enter: valida "DD/MM/AAAA" como data de calendário real. */
+function commitStartsOnDisplay() {
+    const raw = wizardStartsOnDisplay.value.trim();
+    if (!raw) {
+        wizardStartsOnInput.value = "";
+        wizardStartsOnDisplay.classList.remove("input-error");
+        wizardStartsOnError.hidden = true;
+        updateWizardSummary();
+        return;
+    }
+    if (!isValidBrDate(raw)) {
+        wizardStartsOnDisplay.classList.add("input-error");
+        wizardStartsOnError.hidden = false;
+        return;
+    }
+    wizardStartsOnInput.value = brDateToIso(raw);
+    wizardStartsOnDisplay.classList.remove("input-error");
+    wizardStartsOnError.hidden = true;
+    updateWizardSummary();
 }
 
 function resetReminderWizard() {
@@ -1401,13 +1604,14 @@ function resetReminderWizard() {
     wizardWeekdayList.querySelectorAll(".wizard-weekday").forEach((chip) => chip.setAttribute("aria-pressed", "false"));
     setWizardChipGroupPressed(wizardDurationModeOptions, (chip) => chip.dataset.durationMode === "forever");
     wizardDurationFields.hidden = true;
-    wizardStartsOnInput.value = todayLocalDateInput();
+    setStartsOnIso(todayLocalDateInput());
     wizardDurationDaysInput.value = "";
     reminderWizardTitle.textContent = "Novo lembrete";
     wizardSaveButton.textContent = "Salvar lembrete";
     wizardCancelButton.hidden = true;
     setReminderFeedback("");
     updateWizardSummary();
+    setReminderWizardExpanded(false);
 }
 
 function fillWizardForEdit(reminder) {
@@ -1428,7 +1632,7 @@ function fillWizardForEdit(reminder) {
     });
     setWizardChipGroupPressed(wizardDurationModeOptions, (chip) => chip.dataset.durationMode === wizardDurationMode);
     wizardDurationFields.hidden = wizardDurationMode !== "days";
-    wizardStartsOnInput.value = reminder.startsOn;
+    setStartsOnIso(reminder.startsOn);
     wizardDurationDaysInput.value = reminder.endsOn
         ? String(countDaysInclusive(reminder.startsOn, reminder.endsOn) || "")
         : "";
@@ -1438,16 +1642,34 @@ function fillWizardForEdit(reminder) {
     wizardCancelButton.hidden = false;
     setReminderFeedback("");
     updateWizardSummary();
+    setReminderWizardExpanded(true);
     reminderWizardForm.scrollIntoView({ behavior: "smooth", block: "start" });
     wizardMedicationInput.focus();
 }
+
+/**
+ * Em telas estreitas o formulário fica recolhido atrás do botão "+ Novo lembrete"
+ * (a lista de lembretes vem primeiro); em telas largas (>= 1100px, ver styles.css)
+ * o CSS ignora esta classe e os dois ficam sempre visíveis lado a lado.
+ */
+function setReminderWizardExpanded(expanded) {
+    reminderWizard.classList.toggle("collapsed", !expanded);
+    reminderWizardToggle.setAttribute("aria-expanded", String(expanded));
+    reminderWizardToggle.textContent = expanded ? "Fechar formulário" : "+ Novo lembrete";
+}
+
+reminderWizardToggle.addEventListener("click", () => {
+    const expanding = reminderWizard.classList.contains("collapsed");
+    setReminderWizardExpanded(expanding);
+    if (expanding) wizardMedicationInput.focus();
+});
 
 wizardCancelButton.addEventListener("click", () => resetReminderWizard());
 wizardMedicationInput.addEventListener("change", updateWizardSummary);
 
 wizardFrequencyOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
     chip.addEventListener("click", () => {
-        const firstTime = wizardTimes.find((time) => REMINDER_TIME_PATTERN.test(time)) || defaultFirstTime();
+        const firstTime = wizardTimes.find((time) => isValidTimeString(time)) || defaultFirstTime();
         if (chip.dataset.count) {
             wizardIntervalHours = null;
             wizardTimes = generateEvenlySpacedTimes(firstTime, Number(chip.dataset.count));
@@ -1503,7 +1725,7 @@ wizardDurationModeOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
         wizardDurationMode = chip.dataset.durationMode;
         wizardDurationFields.hidden = wizardDurationMode !== "days";
         if (wizardDurationMode === "days" && !wizardStartsOnInput.value) {
-            wizardStartsOnInput.value = todayLocalDateInput();
+            setStartsOnIso(todayLocalDateInput());
         }
         setWizardChipGroupPressed(wizardDurationModeOptions, (candidate) => candidate === chip);
         updateWizardSummary();
@@ -1511,13 +1733,46 @@ wizardDurationModeOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
 });
 
 wizardDurationDaysInput.addEventListener("input", updateWizardSummary);
-wizardStartsOnInput.addEventListener("input", updateWizardSummary);
+
+wizardStartsOnDisplay.addEventListener("input", () => {
+    wizardStartsOnDisplay.value = maskDateTyping(wizardStartsOnDisplay.value);
+    wizardStartsOnDisplay.classList.remove("input-error");
+    wizardStartsOnError.hidden = true;
+});
+wizardStartsOnDisplay.addEventListener("blur", commitStartsOnDisplay);
+wizardStartsOnDisplay.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        commitStartsOnDisplay();
+    }
+});
+
+wizardStartsOnCalendarButton.addEventListener("click", () => {
+    wizardStartsOnNativeInput.value = wizardStartsOnInput.value || todayLocalDateInput();
+    if (typeof wizardStartsOnNativeInput.showPicker === "function") {
+        try {
+            wizardStartsOnNativeInput.showPicker();
+            return;
+        } catch {
+            // Alguns navegadores lançam (ex.: showPicker exige gesto do usuário em
+            // certos contextos) — cai no fallback de foco/clique abaixo.
+        }
+    }
+    wizardStartsOnNativeInput.focus();
+    wizardStartsOnNativeInput.click();
+});
+
+wizardStartsOnNativeInput.addEventListener("change", () => {
+    if (!wizardStartsOnNativeInput.value) return;
+    setStartsOnIso(wizardStartsOnNativeInput.value);
+    updateWizardSummary();
+});
 
 reminderWizardForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
     const medicationId = wizardMedicationInput.value;
-    const times = wizardTimes.filter((time) => REMINDER_TIME_PATTERN.test(time));
+    const times = wizardTimes.filter((time) => isValidTimeString(time));
     const uniqueTimes = new Set(times);
     const weekdays = wizardDayMode === "custom" ? wizardWeekdays : [];
 
@@ -1537,6 +1792,11 @@ reminderWizardForm.addEventListener("submit", async (event) => {
 
     const payload = { medicationId: Number(medicationId), times, weekdays, active: true };
     if (wizardDurationMode === "days") {
+        commitStartsOnDisplay();
+        if (wizardStartsOnDisplay.classList.contains("input-error")) {
+            setReminderFeedback("Informe uma data de início válida (DD/MM/AAAA).", "error");
+            return;
+        }
         const startsOn = wizardStartsOnInput.value || todayLocalDateInput();
         const totalDays = Number(wizardDurationDaysInput.value);
         const endsOn = computeEndsOn(startsOn, totalDays);

@@ -1,14 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+    clearNotificationsUnsupportedFlag,
     DEFAULT_REMINDER_TIME_ZONE,
     fetchAuthenticatedReminders,
     getNextOccurrence,
     getNotificationAvailability,
     getReminderOccurrences,
     getTimezoneParts,
+    isLikelyUnsupportedNotificationUserAgent,
+    readNotificationsUnsupportedFlag,
     ReminderNotificationScheduler,
-    startReminderSchedulerIfAllowed
+    startReminderSchedulerIfAllowed,
+    writeNotificationsUnsupportedFlag
 } from "../public/reminderNotifications.js";
 
 const active = (id, times, overrides = {}) => ({
@@ -400,6 +404,56 @@ test("permissão negada é bloqueada e indisponibilidade não pede permissão", 
     assert.equal(getNotificationAvailability({ notification: unavailable, isSecureContext: true }), "blocked");
     assert.equal(getNotificationAvailability({ notification: { permission: "default", requestPermission() {} }, isSecureContext: false }), "blocked");
     assert.equal(requests, 0);
+});
+
+test("isLikelyUnsupportedNotificationUserAgent detecta Android/iPhone/iPad/iPod, sem falso positivo em desktop", () => {
+    assert.equal(isLikelyUnsupportedNotificationUserAgent(
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36"
+    ), true);
+    assert.equal(isLikelyUnsupportedNotificationUserAgent(
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
+    ), true);
+    assert.equal(isLikelyUnsupportedNotificationUserAgent(
+        "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
+    ), true);
+    assert.equal(isLikelyUnsupportedNotificationUserAgent(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36"
+    ), false);
+    assert.equal(isLikelyUnsupportedNotificationUserAgent(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15"
+    ), false);
+    assert.equal(isLikelyUnsupportedNotificationUserAgent(undefined), false);
+    assert.equal(isLikelyUnsupportedNotificationUserAgent(null), false);
+});
+
+test("flag de notificações sem suporte persiste em localStorage, por trás de try/catch", () => {
+    const values = new Map();
+    const storage = {
+        getItem: (key) => (values.has(key) ? values.get(key) : null),
+        setItem: (key, value) => values.set(key, value),
+        removeItem: (key) => values.delete(key)
+    };
+    assert.equal(readNotificationsUnsupportedFlag(storage), false, "nada gravado ainda");
+
+    writeNotificationsUnsupportedFlag(storage);
+    assert.equal(readNotificationsUnsupportedFlag(storage), true);
+    assert.equal(values.get("medibotNotificationsUnsupported"), "1");
+
+    clearNotificationsUnsupportedFlag(storage);
+    assert.equal(readNotificationsUnsupportedFlag(storage), false);
+});
+
+test("flag de notificações sem suporte não lança com localStorage indisponível (ex.: modo privado)", () => {
+    const throwingStorage = {
+        getItem() { throw new DOMException("blocked"); },
+        setItem() { throw new DOMException("blocked"); },
+        removeItem() { throw new DOMException("blocked"); }
+    };
+    assert.equal(readNotificationsUnsupportedFlag(throwingStorage), false);
+    assert.doesNotThrow(() => writeNotificationsUnsupportedFlag(throwingStorage));
+    assert.doesNotThrow(() => clearNotificationsUnsupportedFlag(throwingStorage));
+    assert.equal(readNotificationsUnsupportedFlag(null), false, "sem storage nenhum (ex.: window.localStorage indisponível)");
+    assert.doesNotThrow(() => writeNotificationsUnsupportedFlag(undefined));
 });
 
 test("carregamento requer token e consulta apenas o endpoint do usuário autenticado", async () => {

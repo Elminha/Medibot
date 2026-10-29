@@ -216,7 +216,11 @@
                     <h3 id="notifications-title">Notificações de lembretes</h3>
                     <p id="notification-status" role="status" aria-live="polite">Notificações desativadas. Ative para receber avisos neste navegador.</p>
                     <p class="notification-next" id="notification-next" hidden></p>
-                    <p class="notification-limit" id="notification-limit" title="O MediBot precisa permanecer aberto e ativo para verificar os horários. O navegador pode atrasar verificações ao suspender a aba, e não envia notificações com ele fechado.">O MediBot precisa permanecer aberto e ativo para verificar os horários. O navegador pode atrasar verificações ao suspender a aba, e não envia notificações com ele fechado.</p>
+                    <button type="button" class="text-button" id="notification-unsupported-retry" hidden>Tentar novamente</button>
+                    <span class="info-tooltip" id="notification-info-wrapper">
+                        <button type="button" class="info-icon-button" id="notification-info-button" aria-label="Por que o MediBot precisa ficar aberto" aria-expanded="false">ⓘ</button>
+                        <p class="notification-limit" id="notification-limit" role="tooltip">O MediBot precisa permanecer aberto e ativo para verificar os horários. O navegador pode atrasar verificações ao suspender a aba, e não envia notificações com ele fechado.</p>
+                    </span>
                 </div>
                 <div class="notification-actions">
                     <button type="button" class="secondary-button" id="notification-test-button" hidden>Enviar teste</button>
@@ -247,6 +251,9 @@
                     <button type="button" class="danger-button" id="telegram-disconnect-button" hidden>Desvincular</button>
                 </div>
             </section>
+
+            <div class="reminders-columns" id="reminders-columns">
+            <button type="button" class="primary-button reminder-wizard-toggle" id="reminder-wizard-toggle" aria-expanded="false" aria-controls="reminder-wizard">+ Novo lembrete</button>
 
             <div class="reminder-wizard" id="reminder-wizard">
                 <div class="section-heading reminder-wizard-heading">
@@ -315,7 +322,15 @@
                             </label>
                             <label>
                                 Data de início
-                                <input type="date" id="wizard-starts-on" />
+                                <div class="date-field">
+                                    <input type="text" id="wizard-starts-on-text" inputmode="numeric" autocomplete="off" enterkeyhint="done" maxlength="10" placeholder="DD/MM/AAAA" aria-label="Data de início" />
+                                    <button type="button" class="icon-button calendar-button" id="wizard-starts-on-calendar-button" aria-label="Abrir calendário">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></svg>
+                                    </button>
+                                    <input type="hidden" id="wizard-starts-on" />
+                                    <input type="date" id="wizard-starts-on-native" class="visually-hidden-field" tabindex="-1" aria-hidden="true" />
+                                </div>
+                                <p class="field-error-message" id="wizard-starts-on-error" hidden>Use uma data válida no formato DD/MM/AAAA.</p>
                             </label>
                         </div>
                     </section>
@@ -329,7 +344,10 @@
                         </div>
                     </section>
 
-                    <p class="wizard-summary" id="wizard-summary" aria-live="polite"></p>
+                    <div class="wizard-summary-block">
+                        <span class="wizard-summary-label">Resumo</span>
+                        <p class="wizard-summary" id="wizard-summary" aria-live="polite"></p>
+                    </div>
                     <p class="reminder-feedback" id="reminder-feedback" role="status" aria-live="polite"></p>
 
                     <button class="primary-button" id="wizard-save-button" type="submit" disabled>Salvar lembrete</button>
@@ -338,6 +356,7 @@
 
             <div class="reminder-list" id="reminder-list" aria-live="polite" aria-busy="true">
                 <p class="reminder-state">Carregando lembretes...</p>
+            </div>
             </div>
         </section>
 
