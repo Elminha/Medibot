@@ -12,14 +12,15 @@ import {
     brDateToIso,
     computeEndsOn,
     countDaysInclusive,
+    editDateField,
+    editTimeField,
     formatDateBr,
     generateEvenlySpacedTimes,
     generateIntervalTimes,
     isValidBrDate,
     isValidTimeString,
     MAX_TIMES_PER_REMINDER,
-    maskDateTyping,
-    maskTimeTyping,
+    normalizeTypedDateBr,
     normalizeTypedTime,
     recalculateIntervalTimes,
     stepTimeValue,
@@ -123,7 +124,8 @@ const viewPageMeta = {
     chat: { title: "Conversar", path: "/conversar" },
     history: { title: "Histórico", path: "/historico" },
     medications: { title: "Medicamentos", path: "/medicamentos" },
-    reminders: { title: "Lembretes", path: "/lembretes" }
+    reminders: { title: "Lembretes", path: "/lembretes" },
+    telegram: { title: "Telegram", path: "/telegram" }
 };
 let gaActive = false;
 let activeView = "chat";
@@ -478,6 +480,33 @@ function addMessage(text, kind, sources = []) {
     scrollToLatest();
 }
 
+// null = ainda não sabemos (antes do login terminar) — a dica fica visível por
+// padrão até sabermos que já há vínculo ("se o estado ainda não for conhecido,
+// mostre"). Atualizado por renderTelegramLinked.
+let telegramLinked = null;
+
+function updateChatTelegramHintVisibility() {
+    const hint = document.querySelector("#chat-telegram-hint");
+    if (hint) hint.hidden = telegramLinked === true;
+}
+
+/** Dica discreta abaixo da mensagem de boas-vindas, sugerindo conectar o
+ * Telegram; some quando a conta já está vinculada. Reaproveitada tanto na carga
+ * inicial da página quanto depois de "Nova conversa" (que limpa #messages). */
+function appendChatTelegramHint() {
+    const hint = document.createElement("p");
+    hint.className = "chat-telegram-hint";
+    hint.id = "chat-telegram-hint";
+    hint.hidden = telegramLinked === true;
+    hint.append(
+        document.createTextNode("Dica: conecte o Telegram para consultar bulas pelo celular e, em breve, receber lembretes por lá."),
+        medicationButton("Conectar Telegram", "text-button", () => setView("telegram"))
+    );
+    messages.append(hint);
+}
+
+appendChatTelegramHint();
+
 function addLoading() {
     const loading = document.createElement("div");
     loading.id = "loading";
@@ -611,10 +640,10 @@ const wizardStartsOnCalendarButton = document.querySelector("#wizard-starts-on-c
 const wizardStartsOnNativeInput = document.querySelector("#wizard-starts-on-native");
 const wizardSummary = document.querySelector("#wizard-summary");
 const reminderFeedback = document.querySelector("#reminder-feedback");
-const remindersColumns = document.querySelector("#reminders-columns");
 const reminderWizardToggle = document.querySelector("#reminder-wizard-toggle");
 const reminderWizard = document.querySelector("#reminder-wizard");
 const reminderList = document.querySelector("#reminder-list");
+const reminderListTitle = document.querySelector("#reminder-list-title");
 const wizardSaveButton = document.querySelector("#wizard-save-button");
 const wizardCancelButton = document.querySelector("#wizard-cancel-button");
 let currentMedications = [];
@@ -955,6 +984,7 @@ function renderReminderCard(reminder) {
 }
 
 function renderReminders(reminders) {
+    reminderListTitle.textContent = `Meus lembretes (${reminders.length})`;
     reminderList.replaceChildren();
     if (!reminders.length) {
         const empty = buildEmptyState(
@@ -1048,9 +1078,9 @@ const notificationCard = document.querySelector("#notification-card");
 const notificationNext = document.querySelector("#notification-next");
 const notificationTestButton = document.querySelector("#notification-test-button");
 const notificationUnsupportedRetry = document.querySelector("#notification-unsupported-retry");
+const notificationGoToTelegram = document.querySelector("#notification-go-to-telegram");
 const notificationInfoWrapper = document.querySelector("#notification-info-wrapper");
 const notificationInfoButton = document.querySelector("#notification-info-button");
-const telegramCard = document.querySelector("#telegram-card");
 
 // Carregamento (requisição) e permissão são dois eixos independentes: a permissão
 // pode estar concedida e, ainda assim, o carregamento dos lembretes falhar (e
@@ -1141,16 +1171,10 @@ function renderNotificationCard() {
     const kind = permissionKind();
     const active = kind === "granted" && reminderLoadState === "loaded";
     const flaggedUnsupported = reminderLoadState === "unsupported" && kind !== "insecure" && kind !== "unsupported" && kind !== "denied";
-    notificationCard.classList.toggle("compact", active);
+    notificationCard.classList.toggle("notification-card-enabled", active);
     notificationTestButton.hidden = !active;
     notificationUnsupportedRetry.hidden = !flaggedUnsupported;
-    // Com permissão concedida mas sem suporte real, "Conectar Telegram" é o jeito
-    // recomendado de receber os lembretes; só faz sentido destacar se o botão de
-    // conectar ainda estiver visível (telegram já vinculado não precisa de destaque).
-    // Busca o botão na hora (em vez de guardar a const de módulo): esta função já
-    // roda antes de "const telegramConnectButton" mais abaixo no arquivo existir.
-    const telegramConnectButtonEl = telegramCard.querySelector("#telegram-connect-button");
-    telegramCard.classList.toggle("telegram-highlight", flaggedUnsupported && telegramConnectButtonEl && !telegramConnectButtonEl.hidden);
+    notificationGoToTelegram.hidden = !flaggedUnsupported;
 
     if (kind === "insecure") {
         notificationButton.hidden = false;
@@ -1200,6 +1224,8 @@ notificationUnsupportedRetry.addEventListener("click", () => {
     renderNotificationCard();
     if (permissionKind() === "granted") loadReminderDataForScheduler();
 });
+
+notificationGoToTelegram.addEventListener("click", () => setView("telegram"));
 
 // Tooltip do ⓘ: hover/foco já mostram via CSS (:hover/:focus-within no
 // styles.css); o clique/toque aqui é só para quem não tem hover (touch) e para
@@ -1422,12 +1448,59 @@ function updateWizardIntervalHint() {
 }
 
 /**
+ * Liga um <input type="text"> a um editor de posições fixas (editTimeField ou
+ * editDateField, de reminderWizard.js): dígito sobrescreve a célula sob o cursor
+ * e avança, Backspace/Delete limpam uma célula sem compactar as demais, e colar
+ * substitui o valor inteiro. Usa `beforeinput` (não só `keydown`) porque o
+ * teclado virtual do Android nem sempre manda o keydown com a tecla certa — só
+ * dispara beforeinput com inputType "insertText"/"deleteContentBackward" etc.
+ * `editField` é a função pura (testada em reminderWizard.js); isto aqui é só o
+ * encanamento do DOM, incluindo restaurar o cursor com setSelectionRange logo
+ * depois de reescrever o valor.
+ */
+function wireFixedPositionEditing(input, editField, onEdited) {
+    function applyAction(action) {
+        const result = editField({
+            value: input.value, selectionStart: input.selectionStart, selectionEnd: input.selectionEnd, action
+        });
+        input.value = result.value;
+        input.setSelectionRange(result.cursor, result.cursor);
+        onEdited();
+    }
+
+    input.addEventListener("beforeinput", (event) => {
+        if (event.inputType === "insertText") {
+            event.preventDefault();
+            const digit = (event.data || "").replace(/\D/g, "").slice(0, 1);
+            if (digit) applyAction({ type: "insert", text: digit });
+        } else if (event.inputType === "deleteContentBackward") {
+            event.preventDefault();
+            applyAction({ type: "backspace" });
+        } else if (event.inputType === "deleteContentForward") {
+            event.preventDefault();
+            applyAction({ type: "delete" });
+        } else if (event.inputType !== "insertFromPaste") {
+            // Outras mutações (desfazer, composição de IME etc.) não fazem sentido
+            // num campo de posições fixas: ignora, mantendo o valor atual. O paste
+            // de verdade é tratado abaixo, no evento "paste" (mais confiável que o
+            // beforeinput "insertFromPaste" entre navegadores).
+            event.preventDefault();
+        }
+    });
+    input.addEventListener("paste", (event) => {
+        event.preventDefault();
+        const text = event.clipboardData ? event.clipboardData.getData("text") : "";
+        applyAction({ type: "paste", text });
+    });
+}
+
+/**
  * Campo de horário com máscara própria (texto + dígitos), em vez do
  * <input type="time"> nativo: no desktop o segmento focado ficava branco sobre
  * branco nos dois temas, e no Chrome Android o seletor nativo cortava o botão
- * "Definir" e o "Limpar" fechava o popup. A máscara/normalização/validação em si
- * (maskTimeTyping, normalizeTypedTime, isValidTimeString, stepTimeValue) é testada
- * como função pura em reminderWizard.js; isto aqui é só o encanamento do DOM.
+ * "Definir" e o "Limpar" fechava o popup. A edição em si (editTimeField,
+ * normalizeTypedTime, isValidTimeString, stepTimeValue) é testada como função
+ * pura em reminderWizard.js; isto aqui é só o encanamento do DOM.
  */
 function createMaskedTimeInput({ value, ariaLabel, onCommit }) {
     const wrapper = document.createElement("div");
@@ -1477,12 +1550,7 @@ function createMaskedTimeInput({ value, ariaLabel, onCommit }) {
         onCommit(normalized, { invalid });
     }
 
-    // Reaplicar a máscara move o cursor para o fim a cada tecla; aceitável aqui
-    // porque o campo só tem 5 caracteres e o uso típico é digitar do início ao fim.
-    input.addEventListener("input", () => {
-        input.value = maskTimeTyping(input.value);
-        setInvalid(false);
-    });
+    wireFixedPositionEditing(input, editTimeField, () => setInvalid(false));
     input.addEventListener("blur", () => commitValue(input.value));
     input.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
@@ -1566,7 +1634,8 @@ function setStartsOnIso(iso) {
     wizardStartsOnError.hidden = true;
 }
 
-/** Ao sair do campo (blur) ou Enter: valida "DD/MM/AAAA" como data de calendário real. */
+/** Ao sair do campo (blur) ou Enter: preenche buracos da edição ("2_/10/2026" ->
+ * "20/10/2026") e valida "DD/MM/AAAA" como data de calendário real. */
 function commitStartsOnDisplay() {
     const raw = wizardStartsOnDisplay.value.trim();
     if (!raw) {
@@ -1576,12 +1645,14 @@ function commitStartsOnDisplay() {
         updateWizardSummary();
         return;
     }
-    if (!isValidBrDate(raw)) {
+    const normalized = normalizeTypedDateBr(raw);
+    if (!normalized || !isValidBrDate(normalized)) {
         wizardStartsOnDisplay.classList.add("input-error");
         wizardStartsOnError.hidden = false;
         return;
     }
-    wizardStartsOnInput.value = brDateToIso(raw);
+    wizardStartsOnDisplay.value = normalized;
+    wizardStartsOnInput.value = brDateToIso(normalized);
     wizardStartsOnDisplay.classList.remove("input-error");
     wizardStartsOnError.hidden = true;
     updateWizardSummary();
@@ -1734,8 +1805,7 @@ wizardDurationModeOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
 
 wizardDurationDaysInput.addEventListener("input", updateWizardSummary);
 
-wizardStartsOnDisplay.addEventListener("input", () => {
-    wizardStartsOnDisplay.value = maskDateTyping(wizardStartsOnDisplay.value);
+wireFixedPositionEditing(wizardStartsOnDisplay, editDateField, () => {
     wizardStartsOnDisplay.classList.remove("input-error");
     wizardStartsOnError.hidden = true;
 });
@@ -1976,6 +2046,8 @@ function restoreTelegramCodeFromStorage() {
 }
 
 function renderTelegramLinked(linked) {
+    telegramLinked = linked;
+    updateChatTelegramHintVisibility();
     telegramStatus.dataset.state = linked ? "linked" : "";
     telegramStatus.textContent = linked
         ? "Telegram conectado. Você já pode enviar perguntas sobre bulas pelo bot."
@@ -2041,7 +2113,10 @@ async function refreshTelegramLinkStatus() {
 }
 
 async function disconnectTelegram() {
-    if (!window.confirm("Desvincular o Telegram desta conta?")) return;
+    const confirmed = await confirmDialog("Desvincular o Telegram desta conta?", {
+        title: "Desvincular Telegram", confirmLabel: "Desvincular"
+    });
+    if (!confirmed) return;
     telegramDisconnectButton.disabled = true;
     try {
         const response = await authenticatedFetch("/api/telegram/link", { method: "DELETE" });
@@ -2266,6 +2341,7 @@ function setView(view) {
     document.querySelector(".history-panel").hidden = view !== "history";
     document.querySelector(".medications-panel").hidden = view !== "medications";
     document.querySelector(".reminders-panel").hidden = view !== "reminders";
+    document.querySelector(".telegram-panel").hidden = view !== "telegram";
     document.querySelector(".safety-note").hidden = view !== "chat";
     document.querySelector("#sidebar").classList.remove("mobile-open");
     activeView = view;
@@ -2292,6 +2368,7 @@ document.querySelector("#new-chat-button").addEventListener("click", () => {
     document.querySelector(".suggestions").hidden = false;
     feedback.textContent = "";
     addMessage("Olá! Eu sou o MediBot. Posso ajudar você a compreender informações presentes nas bulas dos medicamentos disponíveis no sistema. Faça uma pergunta sobre um medicamento.", "bot");
+    appendChatTelegramHint();
     setView("chat");
     questionInput.focus();
 });

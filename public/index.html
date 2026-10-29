@@ -107,6 +107,10 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
                     <span>Lembretes</span>
                 </button>
+                <button type="button" class="nav-button" data-view="telegram">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4Z"/></svg>
+                    <span>Telegram</span>
+                </button>
             </nav>
             <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="false">
                 <span class="theme-toggle-icon icon-sun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></span>
@@ -204,23 +208,28 @@
         </section>
 
         <section class="reminders-panel" aria-labelledby="reminders-title">
-            <div class="section-heading">
+            <div class="section-heading page-heading">
                 <div>
-                    <h2 id="reminders-title">Meus lembretes</h2>
+                    <h2 id="reminders-title">Lembretes</h2>
                     <p>Programe horários para os medicamentos que você acompanha.</p>
                 </div>
             </div>
 
             <section class="notification-settings" id="notification-card" aria-labelledby="notifications-title">
                 <div class="notification-copy">
-                    <h3 id="notifications-title">Notificações de lembretes</h3>
+                    <div class="notification-title-row">
+                        <h3 id="notifications-title">Notificações do navegador</h3>
+                        <span class="info-tooltip" id="notification-info-wrapper">
+                            <button type="button" class="info-icon-button" id="notification-info-button" aria-label="Por que o MediBot precisa ficar aberto" aria-expanded="false">ⓘ</button>
+                            <p class="notification-limit" id="notification-limit" role="tooltip">O MediBot precisa permanecer aberto e ativo para verificar os horários. O navegador pode atrasar verificações ao suspender a aba, e não envia notificações com ele fechado.</p>
+                        </span>
+                    </div>
                     <p id="notification-status" role="status" aria-live="polite">Notificações desativadas. Ative para receber avisos neste navegador.</p>
                     <p class="notification-next" id="notification-next" hidden></p>
-                    <button type="button" class="text-button" id="notification-unsupported-retry" hidden>Tentar novamente</button>
-                    <span class="info-tooltip" id="notification-info-wrapper">
-                        <button type="button" class="info-icon-button" id="notification-info-button" aria-label="Por que o MediBot precisa ficar aberto" aria-expanded="false">ⓘ</button>
-                        <p class="notification-limit" id="notification-limit" role="tooltip">O MediBot precisa permanecer aberto e ativo para verificar os horários. O navegador pode atrasar verificações ao suspender a aba, e não envia notificações com ele fechado.</p>
-                    </span>
+                    <div class="notification-unsupported-actions">
+                        <button type="button" class="text-button" id="notification-go-to-telegram" hidden>Ir para o Telegram</button>
+                        <button type="button" class="text-button" id="notification-unsupported-retry" hidden>Tentar novamente</button>
+                    </div>
                 </div>
                 <div class="notification-actions">
                     <button type="button" class="secondary-button" id="notification-test-button" hidden>Enviar teste</button>
@@ -228,34 +237,10 @@
                 </div>
             </section>
 
-            <section class="notification-settings telegram-card" id="telegram-card" aria-labelledby="telegram-title">
-                <div class="notification-copy">
-                    <h3 id="telegram-title">Conectar Telegram</h3>
-                    <p id="telegram-status" role="status" aria-live="polite">Vincule sua conta para consultar bulas também pelo Telegram.</p>
-                    <div class="telegram-code-box" id="telegram-code-box" hidden>
-                        <p class="telegram-code-row" id="telegram-code-row">
-                            Código: <strong id="telegram-code-value"></strong>
-                            <button type="button" class="secondary-button" id="telegram-copy-button">Copiar</button>
-                            <button type="button" class="secondary-button icon-text-button" id="telegram-regenerate-button" aria-label="Gerar outro código" title="Gerar outro código">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                                <span>Gerar outro código</span>
-                            </button>
-                        </p>
-                        <p class="telegram-countdown" id="telegram-countdown"></p>
-                        <p class="notification-limit" id="telegram-code-hint">O código expira em 10 minutos. Depois de concluir no Telegram, <button type="button" class="text-button" id="telegram-refresh-button">atualizar status</button>.</p>
-                    </div>
-                </div>
-                <div class="telegram-actions">
-                    <button type="button" class="secondary-button" id="telegram-open-link" hidden>Abrir no Telegram</button>
-                    <button type="button" class="primary-button" id="telegram-connect-button">Conectar Telegram</button>
-                    <button type="button" class="danger-button" id="telegram-disconnect-button" hidden>Desvincular</button>
-                </div>
-            </section>
-
             <div class="reminders-columns" id="reminders-columns">
             <button type="button" class="primary-button reminder-wizard-toggle" id="reminder-wizard-toggle" aria-expanded="false" aria-controls="reminder-wizard">+ Novo lembrete</button>
 
-            <div class="reminder-wizard" id="reminder-wizard">
+            <section class="reminder-wizard" id="reminder-wizard" aria-labelledby="reminder-wizard-title">
                 <div class="section-heading reminder-wizard-heading">
                     <h3 id="reminder-wizard-title">Novo lembrete</h3>
                     <button type="button" class="secondary-button" id="wizard-cancel-button" hidden>Cancelar edição</button>
@@ -324,11 +309,16 @@
                                 Data de início
                                 <div class="date-field">
                                     <input type="text" id="wizard-starts-on-text" inputmode="numeric" autocomplete="off" enterkeyhint="done" maxlength="10" placeholder="DD/MM/AAAA" aria-label="Data de início" />
-                                    <button type="button" class="icon-button calendar-button" id="wizard-starts-on-calendar-button" aria-label="Abrir calendário">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></svg>
-                                    </button>
+                                    <span class="calendar-button-wrapper">
+                                        <button type="button" class="icon-button calendar-button" id="wizard-starts-on-calendar-button" aria-label="Abrir calendário">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></svg>
+                                        </button>
+                                        <!-- Sobreposto exatamente ao botão (mesmo tamanho, position:relative no
+                                             wrapper): showPicker() ancora o seletor nativo aqui, não num canto
+                                             qualquer da página. -->
+                                        <input type="date" id="wizard-starts-on-native" class="visually-hidden-field" tabindex="-1" aria-hidden="true" />
+                                    </span>
                                     <input type="hidden" id="wizard-starts-on" />
-                                    <input type="date" id="wizard-starts-on-native" class="visually-hidden-field" tabindex="-1" aria-hidden="true" />
                                 </div>
                                 <p class="field-error-message" id="wizard-starts-on-error" hidden>Use uma data válida no formato DD/MM/AAAA.</p>
                             </label>
@@ -352,12 +342,62 @@
 
                     <button class="primary-button" id="wizard-save-button" type="submit" disabled>Salvar lembrete</button>
                 </form>
+            </section>
+
+            <section class="reminder-list-card" aria-labelledby="reminder-list-title">
+                <div class="section-heading reminder-list-heading">
+                    <h3 id="reminder-list-title">Meus lembretes</h3>
+                </div>
+                <div class="reminder-list" id="reminder-list" aria-live="polite" aria-busy="true">
+                    <p class="reminder-state">Carregando lembretes...</p>
+                </div>
+            </section>
+            </div>
+        </section>
+
+        <section class="telegram-panel" aria-labelledby="telegram-page-title">
+            <div class="section-heading page-heading">
+                <div>
+                    <h2 id="telegram-page-title">Telegram</h2>
+                    <p>Consulte bulas e receba lembretes pelo celular.</p>
+                </div>
             </div>
 
-            <div class="reminder-list" id="reminder-list" aria-live="polite" aria-busy="true">
-                <p class="reminder-state">Carregando lembretes...</p>
-            </div>
-            </div>
+            <section class="notification-settings telegram-card" id="telegram-card" aria-labelledby="telegram-title">
+                <div class="notification-copy">
+                    <h3 id="telegram-title">Conectar Telegram</h3>
+                    <p id="telegram-status" role="status" aria-live="polite">Vincule sua conta para consultar bulas também pelo Telegram.</p>
+                    <div class="telegram-code-box" id="telegram-code-box" hidden>
+                        <p class="telegram-code-row" id="telegram-code-row">
+                            Código: <strong id="telegram-code-value"></strong>
+                            <button type="button" class="secondary-button" id="telegram-copy-button">Copiar</button>
+                            <button type="button" class="secondary-button icon-text-button" id="telegram-regenerate-button" aria-label="Gerar outro código" title="Gerar outro código">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                                <span>Gerar outro código</span>
+                            </button>
+                        </p>
+                        <p class="telegram-countdown" id="telegram-countdown"></p>
+                        <p class="notification-limit" id="telegram-code-hint">O código expira em 10 minutos. Depois de concluir no Telegram, <button type="button" class="text-button" id="telegram-refresh-button">atualizar status</button>.</p>
+                    </div>
+                </div>
+                <div class="telegram-actions">
+                    <button type="button" class="secondary-button" id="telegram-open-link" hidden>Abrir no Telegram</button>
+                    <button type="button" class="primary-button" id="telegram-connect-button">Conectar Telegram</button>
+                    <button type="button" class="danger-button" id="telegram-disconnect-button" hidden>Desvincular</button>
+                </div>
+            </section>
+
+            <section class="telegram-info-card" aria-labelledby="telegram-info-title">
+                <h3 id="telegram-info-title">O que dá para fazer</h3>
+                <p>Pergunte sobre bulas direto no Telegram, do mesmo jeito que pelo site. Comandos disponíveis:</p>
+                <ul class="telegram-command-list">
+                    <li><code>/historico</code> — veja suas últimas perguntas</li>
+                    <li><code>/apagar</code> — apague uma consulta do histórico</li>
+                    <li><code>/desvincular</code> — desconecte esta conta do bot</li>
+                    <li><code>/ajuda</code> — veja esta lista de novo</li>
+                </ul>
+                <p class="telegram-soon-note">Em breve: lembretes de medicamentos pelo Telegram.</p>
+            </section>
         </section>
 
         <p class="safety-note">Informação educativa baseada nas bulas disponíveis no sistema. O MediBot não realiza diagnóstico, não prescreve medicamentos e não substitui a orientação de um profissional de saúde.</p>
