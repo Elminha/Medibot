@@ -47,6 +47,23 @@ export function generateIntervalTimes(firstTime, intervalHours) {
     return generateEvenlySpacedTimes(firstTime, 24 / intervalHours);
 }
 
+/**
+ * Modo "de X em X horas": ao editar o horário no índice `editedIndex` para `newTime`,
+ * recalcula TODOS os outros mantendo o intervalo entre eles (sem mudar a ordem dos
+ * campos). Só se usa neste modo — "1x a 4x" e "Escolher os horários" nunca chamam isto.
+ */
+export function recalculateIntervalTimes(times, editedIndex, newTime, intervalHours) {
+    if (!Array.isArray(times) || !TIME_PATTERN.test(newTime) || !Number.isInteger(editedIndex)
+        || editedIndex < 0 || editedIndex >= times.length || !Number.isInteger(intervalHours) || intervalHours < 1) {
+        return Array.isArray(times) ? [...times] : [];
+    }
+
+    const [hour, minute] = newTime.split(":").map(Number);
+    const baseMinutes = hour * 60 + minute;
+    const stepMinutes = intervalHours * 60;
+    return times.map((_, index) => formatMinutesAsTime(baseMinutes + (index - editedIndex) * stepMinutes));
+}
+
 export function formatWeekdaysSummary(weekdays) {
     if (!Array.isArray(weekdays) || weekdays.length === 0) {
         return "Todos os dias";
@@ -94,11 +111,15 @@ export function countDaysInclusive(startsOn, endsOn) {
 }
 
 /** Resumo de uma linha usado antes de salvar e na lista de lembretes. */
-export function summarizeReminder({ medicationName, times, weekdays, endsOn, status }) {
+export function summarizeSchedule({ times, weekdays, endsOn, status }) {
     const timesLabel = Array.isArray(times) && times.length ? times.join(", ") : "sem horário definido";
     const daysLabel = formatWeekdaysSummary(weekdays);
     const durationLabel = endsOn ? `até ${formatDateBr(endsOn)}` : "sem data para terminar";
     const statusLabel = status === "paused" ? " (pausado)" : status === "ended" ? " (encerrado)" : "";
 
-    return `${medicationName} — ${timesLabel} — ${daysLabel} — ${durationLabel}${statusLabel}`;
+    return `${timesLabel} — ${daysLabel} — ${durationLabel}${statusLabel}`;
+}
+
+export function summarizeReminder({ medicationName, times, weekdays, endsOn, status }) {
+    return `${medicationName} — ${summarizeSchedule({ times, weekdays, endsOn, status })}`;
 }

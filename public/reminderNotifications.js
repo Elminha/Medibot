@@ -85,7 +85,14 @@ function readDelivered(storage, userId) {
 export class ReminderNotificationScheduler {
     constructor({
         userId, timezone = DEFAULT_REMINDER_TIME_ZONE, notification, storage, onNavigate,
-        now = () => new Date(), setIntervalFn = setInterval, clearIntervalFn = clearInterval
+        now = () => new Date(),
+        // Nunca `setIntervalFn = setInterval` (e o mesmo para clearInterval): guardar a
+        // função nativa como propriedade e chamá-la como `this.setIntervalFn(...)` invoca
+        // setInterval com `this` = a instância do agendador, não a Window, e o Chromium
+        // responde com "TypeError: Illegal invocation". O wrapper abaixo chama
+        // setInterval/clearInterval como função solta (sem receiver), que é sempre seguro.
+        setIntervalFn = (callback, delay) => setInterval(callback, delay),
+        clearIntervalFn = (id) => clearInterval(id)
     }) {
         this.userId = String(userId);
         this.timezone = timezone;

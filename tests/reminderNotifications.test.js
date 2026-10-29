@@ -58,6 +58,40 @@ test("lembretes inativos ou sem horário válido não geram ocorrência", () => 
     assert.equal(getReminderOccurrences(active(1, ["25:99"]), now).length, 0);
 });
 
+test("start()/stop() usam o setInterval/clearInterval nativos sem receiver errado (reproduz o 'Illegal invocation' real do Chromium quando setIntervalFn não é injetado)", () => {
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    let scheduledCount = 0;
+
+    // Simula o comportamento real do navegador: setInterval/clearInterval nativos
+    // lançam "Illegal invocation" quando chamados com `this` diferente de
+    // globalThis/undefined (é exatamente o que acontece se o código guardar a função
+    // nativa como propriedade de um objeto e chamá-la como `this.setIntervalFn(...)`).
+    function strictSetInterval(callback, delay) {
+        if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+        scheduledCount += 1;
+        return originalSetInterval(callback, delay);
+    }
+    function strictClearInterval(id) {
+        if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+        originalClearInterval(id);
+    }
+
+    globalThis.setInterval = strictSetInterval;
+    globalThis.clearInterval = strictClearInterval;
+    try {
+        const scheduler = new ReminderNotificationScheduler({
+            userId: 1, notification: class { constructor() {} }, storage: null, onNavigate() {}
+        });
+        assert.doesNotThrow(() => scheduler.start());
+        assert.equal(scheduledCount, 1);
+        assert.doesNotThrow(() => scheduler.stop());
+    } finally {
+        globalThis.setInterval = originalSetInterval;
+        globalThis.clearInterval = originalClearInterval;
+    }
+});
+
 test("cruza o horário entre verificações e não repete na mesma ocorrência", () => {
     let now = new Date("2024-01-08T13:29:50.000Z");
     const instances = [];

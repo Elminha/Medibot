@@ -8,7 +8,9 @@ import {
     generateEvenlySpacedTimes,
     generateIntervalTimes,
     MAX_TIMES_PER_REMINDER,
-    summarizeReminder
+    recalculateIntervalTimes,
+    summarizeReminder,
+    summarizeSchedule
 } from "../public/reminderWizard.js";
 
 test("1x a 4x por dia distribui os horários igualmente a partir do primeiro horário", () => {
@@ -33,6 +35,24 @@ test("entradas inválidas (horário malformado, contagem fora do limite) não ge
     assert.deepEqual(generateEvenlySpacedTimes("8:00", 2), []);
     assert.deepEqual(generateEvenlySpacedTimes("08:00", 0), []);
     assert.deepEqual(generateEvenlySpacedTimes("08:00", MAX_TIMES_PER_REMINDER + 1), []);
+});
+
+test("recalculateIntervalTimes mantém o intervalo ao editar qualquer horário, sem reordenar os campos", () => {
+    assert.deepEqual(recalculateIntervalTimes(["08:00", "14:00", "20:00"], 1, "15:00", 6), ["09:00", "15:00", "21:00"]);
+    assert.deepEqual(recalculateIntervalTimes(["08:00", "20:00"], 0, "22:00", 12), ["22:00", "10:00"]);
+    // edita o primeiro horário de um "de 8 em 8" e os demais acompanham, com wrap à meia-noite
+    assert.deepEqual(recalculateIntervalTimes(["08:00", "16:00", "00:00"], 0, "22:00", 8), ["22:00", "06:00", "14:00"]);
+});
+
+test("recalculateIntervalTimes com entrada inválida devolve os horários originais, sem quebrar", () => {
+    assert.deepEqual(recalculateIntervalTimes(["08:00", "14:00"], 0, "25:99", 6), ["08:00", "14:00"]);
+    assert.deepEqual(recalculateIntervalTimes(["08:00", "14:00"], 5, "09:00", 6), ["08:00", "14:00"]);
+});
+
+test("summarizeSchedule é o summarizeReminder sem o nome do medicamento", () => {
+    const schedule = { times: ["08:00", "20:00"], weekdays: [1, 2, 3, 4, 5], endsOn: "2024-03-16", status: "paused" };
+    assert.equal(summarizeSchedule(schedule), "08:00, 20:00 — Seg, Ter, Qua, Qui, Sex — até 16/03/2024 (pausado)");
+    assert.equal(summarizeReminder({ medicationName: "Losartana", ...schedule }), `Losartana — ${summarizeSchedule(schedule)}`);
 });
 
 test("formatWeekdaysSummary: vazio é 'Todos os dias'; dias específicos saem em ordem Seg..Dom", () => {

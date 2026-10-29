@@ -211,13 +211,17 @@
                 </div>
             </div>
 
-            <section class="notification-settings" aria-labelledby="notifications-title">
+            <section class="notification-settings" id="notification-card" aria-labelledby="notifications-title">
                 <div class="notification-copy">
                     <h3 id="notifications-title">Notificações de lembretes</h3>
                     <p id="notification-status" role="status" aria-live="polite">Notificações desativadas. Ative para receber avisos neste navegador.</p>
-                    <p class="notification-limit">O MediBot precisa permanecer aberto e ativo para verificar os horários. O navegador pode atrasar verificações ao suspender a aba, e não envia notificações com ele fechado.</p>
+                    <p class="notification-next" id="notification-next" hidden></p>
+                    <p class="notification-limit" id="notification-limit" title="O MediBot precisa permanecer aberto e ativo para verificar os horários. O navegador pode atrasar verificações ao suspender a aba, e não envia notificações com ele fechado.">O MediBot precisa permanecer aberto e ativo para verificar os horários. O navegador pode atrasar verificações ao suspender a aba, e não envia notificações com ele fechado.</p>
                 </div>
-                <button type="button" class="primary-button" id="notification-toggle">Ativar notificações</button>
+                <div class="notification-actions">
+                    <button type="button" class="secondary-button" id="notification-test-button" hidden>Enviar teste</button>
+                    <button type="button" class="primary-button" id="notification-toggle">Ativar notificações</button>
+                </div>
             </section>
 
             <section class="notification-settings telegram-card" id="telegram-card" aria-labelledby="telegram-title">
@@ -278,6 +282,7 @@
                         <p class="wizard-step-label" id="wizard-times-label">Horários</p>
                         <div class="wizard-time-list" id="wizard-time-list" aria-labelledby="wizard-times-label"></div>
                         <button type="button" class="secondary-button" id="wizard-add-time-button">Adicionar horário</button>
+                        <p class="wizard-hint" id="wizard-interval-hint" hidden></p>
                     </section>
 
                     <section class="wizard-step">
@@ -346,6 +351,19 @@
         <div class="cookie-banner-actions">
             <button type="button" class="secondary-button" id="cookie-reject">Recusar</button>
             <button type="button" class="primary-button" id="cookie-accept">Aceitar</button>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+    <div class="confirm-dialog-backdrop" id="confirm-dialog-backdrop" hidden>
+        <div class="confirm-dialog" id="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
+            <h3 id="confirm-dialog-title">Confirmar</h3>
+            <p id="confirm-dialog-message"></p>
+            <div class="confirm-dialog-actions">
+                <button type="button" class="secondary-button" id="confirm-dialog-cancel">Cancelar</button>
+                <button type="button" class="danger-button" id="confirm-dialog-confirm">Excluir</button>
+            </div>
         </div>
     </div>
 

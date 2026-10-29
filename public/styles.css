@@ -464,3 +464,86 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
     .cookie-banner-actions { flex-direction: column-reverse; }
     .cookie-banner-actions button { width: 100%; }
 }
+
+/* ===== Toast (feedback de sucesso, não fica preso no formulário) ===== */
+.toast-container {
+    position: fixed; z-index: 200; right: 20px; bottom: 20px; display: flex;
+    flex-direction: column; gap: 10px; width: min(320px, calc(100% - 40px)); pointer-events: none;
+}
+.toast {
+    display: flex; align-items: center; gap: 10px; border-radius: var(--radius-md);
+    background: var(--surface); border: 1px solid var(--border-soft); box-shadow: var(--shadow-md);
+    padding: 12px 14px; color: var(--text); font-size: .86rem; font-weight: 600;
+    opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .2s; pointer-events: auto;
+}
+.toast.toast-visible { opacity: 1; transform: translateY(0); }
+.toast.toast-success { border-color: var(--primary-soft-strong); }
+.toast.toast-success::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+.toast.toast-error { border-color: var(--danger-soft); }
+.toast.toast-error::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+@media (max-width: 480px) {
+    .toast-container { right: 10px; left: 10px; bottom: 100px; width: auto; }
+}
+
+/* ===== Diálogo de confirmação (substitui window.confirm em Medicamentos/Lembretes) ===== */
+.confirm-dialog-backdrop {
+    position: fixed; z-index: 150; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(10, 20, 17, .45); padding: 20px;
+}
+.confirm-dialog-backdrop[hidden] { display: none !important; }
+.confirm-dialog {
+    width: min(360px, 100%); border-radius: var(--radius-lg); background: var(--surface);
+    box-shadow: var(--shadow-lg); padding: 22px;
+}
+.confirm-dialog h3 { margin: 0 0 10px; color: var(--text); font-size: 1.05rem; }
+.confirm-dialog p { margin: 0 0 18px; color: var(--text-muted); font-size: .9rem; line-height: 1.5; }
+.confirm-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+/* ===== Card de notificações: estados compactos ===== */
+.notification-actions { display: flex; flex: none; align-items: center; gap: 8px; }
+.notification-settings.compact { align-items: center; }
+.notification-settings.compact .notification-copy h3 { display: none; }
+.notification-settings.compact #notification-status { display: inline-flex; align-items: center; gap: 7px; font-weight: 650; }
+.notification-settings.compact #notification-status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+.notification-settings.compact .notification-limit {
+    display: inline-block; max-width: 1px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    color: var(--text-muted); font-size: 0; margin: 0;
+}
+.notification-next { margin: 4px 0 0; color: var(--text-muted); font-size: .8rem; font-weight: 600; }
+#notification-test-button { flex: none; }
+
+/* ===== Destaque rápido no card recém-criado/editado ===== */
+@keyframes reminder-card-highlight-pulse {
+    0% { box-shadow: 0 0 0 0 var(--primary-soft-strong); }
+    70% { box-shadow: 0 0 0 8px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}
+.reminder-card.reminder-card-highlight { border-color: var(--primary); animation: reminder-card-highlight-pulse 1.4s ease-out; }
+
+/* ===== Dica do modo "de X em X horas" ===== */
+.wizard-hint { margin: 2px 0 0; color: var(--text-muted); font-size: .78rem; line-height: 1.4; }
+
+/* ===== Campos nativos de hora/data: visual discreto (sem o bloco azul do Chromium) ===== */
+input[type="time"], input[type="date"] {
+    caret-color: var(--primary); color-scheme: light dark;
+}
+input[type="time"]::-webkit-datetime-edit-fields-wrapper,
+input[type="date"]::-webkit-datetime-edit-fields-wrapper { background: transparent; }
+input[type="time"]::-webkit-datetime-edit-hour-field,
+input[type="time"]::-webkit-datetime-edit-minute-field,
+input[type="time"]::-webkit-datetime-edit-ampm-field,
+input[type="date"]::-webkit-datetime-edit-day-field,
+input[type="date"]::-webkit-datetime-edit-month-field,
+input[type="date"]::-webkit-datetime-edit-year-field {
+    background: transparent; border-radius: 3px; padding: 0 1px;
+}
+input[type="time"]::-webkit-datetime-edit-hour-field:focus,
+input[type="time"]::-webkit-datetime-edit-minute-field:focus,
+input[type="time"]::-webkit-datetime-edit-ampm-field:focus,
+input[type="date"]::-webkit-datetime-edit-day-field:focus,
+input[type="date"]::-webkit-datetime-edit-month-field:focus,
+input[type="date"]::-webkit-datetime-edit-year-field:focus {
+    background: transparent; outline: none; color: var(--primary);
+    text-decoration: underline; text-decoration-color: var(--primary); text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
+}
