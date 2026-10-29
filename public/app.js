@@ -1,7 +1,33 @@
 import {
-    getNotificationAvailability,
-    startReminderSchedulerIfAllowed
+    clearNotificationsUnsupportedFlag,
+    DEFAULT_REMINDER_TIME_ZONE,
+    getNextOccurrence,
+    getTimezoneParts,
+    isLikelyUnsupportedNotificationUserAgent,
+    readNotificationsUnsupportedFlag,
+    startReminderSchedulerIfAllowed,
+    writeNotificationsUnsupportedFlag
 } from "./reminderNotifications.js";
+import {
+    brDateToIso,
+    computeEndsOn,
+    countDaysInclusive,
+    editDateField,
+    editTimeField,
+    formatDateBr,
+    generateEvenlySpacedTimes,
+    generateIntervalTimes,
+    isValidBrDate,
+    isValidTimeString,
+    MAX_TIMES_PER_REMINDER,
+    normalizeTypedDateBr,
+    normalizeTypedTime,
+    recalculateIntervalTimes,
+    resolveStartsOnFromNativePicker,
+    stepTimeValue,
+    summarizeReminder,
+    summarizeSchedule
+} from "./reminderWizard.js";
 import {
     formatCountdown,
     getCountdownLevel,
@@ -99,7 +125,8 @@ const viewPageMeta = {
     chat: { title: "Conversar", path: "/conversar" },
     history: { title: "Histórico", path: "/historico" },
     medications: { title: "Medicamentos", path: "/medicamentos" },
-    reminders: { title: "Lembretes", path: "/lembretes" }
+    reminders: { title: "Lembretes", path: "/lembretes" },
+    telegram: { title: "Telegram", path: "/telegram" }
 };
 let gaActive = false;
 let activeView = "chat";
@@ -214,6 +241,61 @@ function buildEmptyState(iconKey, text, actionLabel, onAction) {
     return container;
 }
 
+// ===== Toast (feedback de sucesso que não fica preso dentro de um formulário) =====
+
+const toastContainer = document.querySelector("#toast-container");
+
+function showToast(message, type = "success", durationMs = 4000) {
+    const toast = document.createElement("p");
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    toastContainer.append(toast);
+    window.requestAnimationFrame(() => toast.classList.add("toast-visible"));
+    window.setTimeout(() => {
+        toast.classList.remove("toast-visible");
+        window.setTimeout(() => toast.remove(), 250);
+    }, durationMs);
+}
+
+// ===== Diálogo de confirmação (substitui window.confirm) =====
+
+const confirmDialogBackdrop = document.querySelector("#confirm-dialog-backdrop");
+const confirmDialogTitle = document.querySelector("#confirm-dialog-title");
+const confirmDialogMessage = document.querySelector("#confirm-dialog-message");
+const confirmDialogCancelButton = document.querySelector("#confirm-dialog-cancel");
+const confirmDialogConfirmButton = document.querySelector("#confirm-dialog-confirm");
+
+function confirmDialog(message, { title = "Confirmar", confirmLabel = "Excluir" } = {}) {
+    return new Promise((resolve) => {
+        const previouslyFocused = document.activeElement;
+        confirmDialogTitle.textContent = title;
+        confirmDialogMessage.textContent = message;
+        confirmDialogConfirmButton.textContent = confirmLabel;
+        confirmDialogBackdrop.hidden = false;
+        confirmDialogConfirmButton.focus();
+
+        function close(result) {
+            confirmDialogBackdrop.hidden = true;
+            document.removeEventListener("keydown", onKeyDown);
+            confirmDialogConfirmButton.removeEventListener("click", onConfirm);
+            confirmDialogCancelButton.removeEventListener("click", onCancel);
+            confirmDialogBackdrop.removeEventListener("click", onBackdropClick);
+            if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+            resolve(result);
+        }
+
+        function onConfirm() { close(true); }
+        function onCancel() { close(false); }
+        function onKeyDown(event) { if (event.key === "Escape") close(false); }
+        function onBackdropClick(event) { if (event.target === confirmDialogBackdrop) close(false); }
+
+        confirmDialogConfirmButton.addEventListener("click", onConfirm);
+        confirmDialogCancelButton.addEventListener("click", onCancel);
+        document.addEventListener("keydown", onKeyDown);
+        confirmDialogBackdrop.addEventListener("click", onBackdropClick);
+    });
+}
+
 let isWaiting = false;
 let notificationScheduler = null;
 let reminderRefreshTimer = null;
@@ -229,7 +311,9 @@ async function authenticatedFetch(url, options = {}) {
 
     const headers = new Headers(options.headers || {});
     headers.set("Authorization", `Bearer ${token}`);
-    const response = await fetch(url, { ...options, headers });
+    // Dados do usuário autenticado nunca devem vir do cache HTTP do navegador (o
+    // servidor já manda Cache-Control: no-store, isto é defesa adicional do lado do cliente).
+    const response = await fetch(url, { ...options, headers, cache: "no-store" });
 
     if (response.status === 401) {
         showAuthentication();
@@ -303,8 +387,7 @@ function clearApplicationData() {
     currentTelegramLink = null;
     questionInput.value = "";
     medicationForm.reset();
-    reminderForm.reset();
-    reminderActiveInput.checked = true;
+    resetReminderWizard();
     currentMedications = [];
 }
 
@@ -323,19 +406,22 @@ function showApplication(user) {
     setView("chat");
     renderTelegramLinked(Boolean(user.telegramLinked));
     if (!user.telegramLinked) restoreTelegramCodeFromStorage();
-    const reminderLoad = loadReminders();
-    if (getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext }) === "enabled") {
-        setNotificationState("pending", "Permissão concedida. Carregando seus lembretes para retomar as notificações…");
-    } else {
-        updateNotificationPermissionState();
-    }
-    Promise.all([loadMedications(), reminderLoad, loadQueryHistory()]).then(([, reminders]) => {
-        if (Array.isArray(reminders)) {
-            initializeReminderScheduler(reminders);
-        } else if (getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext }) === "enabled") {
-            setNotificationState("disabled", "Não foi possível carregar seus lembretes. Verifique a conexão e tente ativar novamente.");
-        }
-    });
+    const notificationAlreadyGranted = permissionKind() === "granted";
+    const knownUnsupported = applyKnownNotificationUnsupportedState();
+    renderNotificationCard();
+
+    const reminderLoad = (notificationAlreadyGranted && !knownUnsupported) ? loadReminderDataForScheduler() : loadReminders();
+    // try/catch (não só .then) garante que o card de notificações nunca fique preso:
+    // qualquer falha, mesmo inesperada, cai no catch e devolve um estado clicável de
+    // novo ("Tentar novamente"), em vez de ficar travado num texto de carregamento.
+    Promise.all([loadMedications(), reminderLoad, loadQueryHistory()])
+        .catch((error) => {
+            console.error("Falha inesperada ao preparar a tela inicial:", error);
+            if (notificationAlreadyGranted) {
+                reminderLoadState = "error";
+                renderNotificationCard();
+            }
+        });
     window.clearInterval(reminderRefreshTimer);
     reminderRefreshTimer = window.setInterval(() => {
         refreshReminderNotifications();
@@ -394,6 +480,33 @@ function addMessage(text, kind, sources = []) {
     messages.append(message);
     scrollToLatest();
 }
+
+// null = ainda não sabemos (antes do login terminar) — a dica fica visível por
+// padrão até sabermos que já há vínculo ("se o estado ainda não for conhecido,
+// mostre"). Atualizado por renderTelegramLinked.
+let telegramLinked = null;
+
+function updateChatTelegramHintVisibility() {
+    const hint = document.querySelector("#chat-telegram-hint");
+    if (hint) hint.hidden = telegramLinked === true;
+}
+
+/** Dica discreta abaixo da mensagem de boas-vindas, sugerindo conectar o
+ * Telegram; some quando a conta já está vinculada. Reaproveitada tanto na carga
+ * inicial da página quanto depois de "Nova conversa" (que limpa #messages). */
+function appendChatTelegramHint() {
+    const hint = document.createElement("p");
+    hint.className = "chat-telegram-hint";
+    hint.id = "chat-telegram-hint";
+    hint.hidden = telegramLinked === true;
+    hint.append(
+        document.createTextNode("Dica: use o MediBot também no Telegram e, em breve, receba seus lembretes por lá."),
+        medicationButton("Conectar Telegram", "text-button", () => setView("telegram"))
+    );
+    messages.append(hint);
+}
+
+appendChatTelegramHint();
 
 function addLoading() {
     const loading = document.createElement("div");
@@ -506,21 +619,42 @@ const medicationInstructionsInput = document.querySelector("#medication-instruct
 const medicationFeedback = document.querySelector("#medication-feedback");
 const medicationList = document.querySelector("#medication-list");
 const addMedicationButton = document.querySelector("#add-medication-button");
-const reminderForm = document.querySelector("#reminder-form");
-const reminderMedicationInput = document.querySelector("#reminder-medication");
-const reminderTimeInput = document.querySelector("#reminder-time");
-const reminderFrequencyInput = document.querySelector("#reminder-frequency");
-const reminderActiveInput = document.querySelector("#reminder-active");
+const reminderWizardTitle = document.querySelector("#reminder-wizard-title");
+const reminderWizardForm = document.querySelector("#reminder-wizard-form");
+const wizardMedicationInput = document.querySelector("#wizard-medication");
+const wizardFrequencyOptions = document.querySelector("#wizard-frequency-options");
+const wizardChooseTimesButton = document.querySelector("#wizard-choose-times-button");
+const wizardTimeList = document.querySelector("#wizard-time-list");
+const wizardAddTimeButton = document.querySelector("#wizard-add-time-button");
+const wizardIntervalHint = document.querySelector("#wizard-interval-hint");
+const wizardDayModeOptions = document.querySelector("#wizard-day-mode-options");
+const wizardWeekdayList = document.querySelector("#wizard-weekday-list");
+const wizardDurationModeOptions = document.querySelector("#wizard-duration-mode-options");
+const wizardDurationFields = document.querySelector("#wizard-duration-fields");
+const wizardDurationDaysInput = document.querySelector("#wizard-duration-days");
+// Fonte da verdade (ISO "YYYY-MM-DD"), nunca editado diretamente pelo usuário: o
+// campo visível é o texto mascarado "DD/MM/AAAA" abaixo, sincronizado com este.
+const wizardStartsOnInput = document.querySelector("#wizard-starts-on");
+const wizardStartsOnDisplay = document.querySelector("#wizard-starts-on-text");
+const wizardStartsOnError = document.querySelector("#wizard-starts-on-error");
+const wizardStartsOnCalendarButton = document.querySelector("#wizard-starts-on-calendar-button");
+const wizardStartsOnNativeInput = document.querySelector("#wizard-starts-on-native");
+const wizardSummary = document.querySelector("#wizard-summary");
 const reminderFeedback = document.querySelector("#reminder-feedback");
+const reminderWizardToggle = document.querySelector("#reminder-wizard-toggle");
+const reminderWizard = document.querySelector("#reminder-wizard");
 const reminderList = document.querySelector("#reminder-list");
-const addReminderButton = document.querySelector("#add-reminder-button");
-const frequencyLabels = {
-    daily: "Todos os dias",
-    weekly: "Semanalmente",
-    weekdays: "Dias úteis",
-    custom: "Personalizada"
-};
+const reminderListTitle = document.querySelector("#reminder-list-title");
+const wizardSaveButton = document.querySelector("#wizard-save-button");
+const wizardCancelButton = document.querySelector("#wizard-cancel-button");
 let currentMedications = [];
+let currentReminderTimezone = DEFAULT_REMINDER_TIME_ZONE;
+let editingReminderId = null;
+let wizardTimes = [];
+let wizardIntervalHours = null; // 6 | 8 | 12 quando os horários vieram de "de X em X horas"; null nos outros modos
+let wizardDayMode = "all";
+let wizardWeekdays = [];
+let wizardDurationMode = "forever";
 
 function setMedicationFeedback(message = "", type = "") {
     medicationFeedback.textContent = message;
@@ -726,7 +860,10 @@ async function loadMedications() {
 }
 
 async function deleteMedication(id, name) {
-    if (!window.confirm(`Excluir o medicamento "${name}"?`)) return;
+    const confirmed = await confirmDialog(`Excluir o medicamento "${name}"? Os lembretes associados a ele também serão excluídos.`, {
+        title: "Excluir medicamento"
+    });
+    if (!confirmed) return;
     setMedicationFeedback("");
     try {
         const response = await authenticatedFetch(`/api/medications/${id}`, { method: "DELETE" });
@@ -778,7 +915,7 @@ function setReminderFeedback(message = "", type = "") {
 
 function setReminderLoading(isLoading) {
     reminderList.setAttribute("aria-busy", String(isLoading));
-    addReminderButton.disabled = isLoading || currentMedications.length === 0;
+    wizardSaveButton.disabled = isLoading || currentMedications.length === 0;
 }
 
 function reminderError(response, fallback) {
@@ -805,135 +942,50 @@ function populateMedicationSelect(select, selectedId) {
 }
 
 function populateReminderMedicationOptions() {
-    const selectedId = reminderMedicationInput.value;
-    populateMedicationSelect(reminderMedicationInput, selectedId);
-    addReminderButton.disabled = currentMedications.length === 0;
-}
-
-function reminderBody(medicationId, time, frequency, active) {
-    return { medicationId: Number(medicationId), time, frequency, active };
+    const selectedId = wizardMedicationInput.value;
+    populateMedicationSelect(wizardMedicationInput, selectedId);
+    wizardSaveButton.disabled = currentMedications.length === 0;
 }
 
 function reminderButton(text, className, onClick) {
     return medicationButton(text, className, onClick);
 }
 
-function frequencyLabel(frequency) {
-    return frequencyLabels[frequency] || frequency;
+function statusLabel(status) {
+    return status === "ended" ? "Encerrado" : status === "paused" ? "Pausado" : "Ativo";
 }
 
 function renderReminderCard(reminder) {
     const card = document.createElement("article");
     card.className = "reminder-card";
+    card.dataset.reminderId = String(reminder.id);
     const header = document.createElement("div");
     header.className = "reminder-card-header";
     const name = document.createElement("h3");
     name.className = "reminder-medication-name";
     name.textContent = reminder.medicationName;
     const status = document.createElement("span");
-    status.className = `reminder-status${reminder.active ? "" : " inactive"}`;
-    status.textContent = reminder.active ? "Ativo" : "Inativo";
+    status.className = `reminder-status${reminder.status === "active" ? "" : ` ${reminder.status}`}`;
+    status.textContent = statusLabel(reminder.status);
     header.append(name, status);
 
-    const meta = document.createElement("div");
-    meta.className = "reminder-meta";
-    const timeBadge = document.createElement("span");
-    timeBadge.className = "reminder-time-badge";
-    timeBadge.textContent = reminder.time;
-    const frequency = document.createElement("span");
-    frequency.className = "reminder-frequency-label";
-    frequency.textContent = frequencyLabel(reminder.frequency);
-    meta.append(timeBadge, frequency);
+    const summary = document.createElement("p");
+    summary.className = "reminder-frequency-label";
+    summary.textContent = summarizeSchedule(reminder);
 
     const actions = document.createElement("div");
     actions.className = "reminder-actions";
     actions.append(
-        reminderButton("Editar", "secondary-button", () => showReminderEditor(card, reminder)),
-        reminderButton(reminder.active ? "Desativar" : "Ativar", "secondary-button", () => setReminderActive(reminder, !reminder.active)),
+        reminderButton("Editar", "secondary-button", () => fillWizardForEdit(reminder)),
+        reminderButton(reminder.active ? "Pausar" : "Ativar", "secondary-button", () => setReminderActive(reminder, !reminder.active)),
         reminderButton("Excluir", "danger-button", () => deleteReminder(reminder.id, reminder.medicationName))
     );
-    card.append(header, meta, actions);
+    card.append(header, summary, actions);
     return card;
 }
 
-function showReminderEditor(card, reminder) {
-    if (card.querySelector(".reminder-edit-form")) return;
-
-    const form = document.createElement("form");
-    form.className = "reminder-edit-form";
-    const fields = document.createElement("div");
-    fields.className = "reminder-edit-fields";
-
-    const medicationLabel = document.createElement("label");
-    medicationLabel.textContent = "Medicamento";
-    const medicationInput = document.createElement("select");
-    populateMedicationSelect(medicationInput, reminder.medicationId);
-    medicationLabel.append(medicationInput);
-
-    const timeLabel = document.createElement("label");
-    timeLabel.textContent = "Horário";
-    const timeInput = document.createElement("input");
-    timeInput.type = "time";
-    timeInput.value = reminder.time;
-    timeInput.required = true;
-    timeLabel.append(timeInput);
-
-    const frequencyLabelElement = document.createElement("label");
-    frequencyLabelElement.textContent = "Frequência";
-    const frequencyInput = document.createElement("select");
-    Object.entries(frequencyLabels).forEach(([value, label]) => {
-        const option = document.createElement("option");
-        option.value = value;
-        option.textContent = label;
-        option.selected = value === reminder.frequency;
-        frequencyInput.append(option);
-    });
-    frequencyLabelElement.append(frequencyInput);
-
-    const activeLabel = document.createElement("label");
-    activeLabel.className = "active-field";
-    const activeInput = document.createElement("input");
-    activeInput.type = "checkbox";
-    activeInput.checked = reminder.active;
-    activeLabel.append(activeInput, document.createTextNode(" Lembrete ativo"));
-    fields.append(medicationLabel, timeLabel, frequencyLabelElement, activeLabel);
-
-    const actions = document.createElement("div");
-    actions.className = "edit-actions";
-    const saveButton = reminderButton("Salvar alterações", "primary-button", () => {});
-    saveButton.type = "submit";
-    actions.append(saveButton, reminderButton("Cancelar", "secondary-button", () => form.remove()));
-    form.append(fields, actions);
-
-    form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        if (!medicationInput.value || !timeInput.value) {
-            setReminderFeedback("Informe o medicamento e o horário para salvar as alterações.", "error");
-            return;
-        }
-        saveButton.disabled = true;
-        setReminderFeedback("");
-        try {
-            const response = await authenticatedFetch(`/api/reminders/${reminder.id}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(reminderBody(medicationInput.value, timeInput.value, frequencyInput.value, activeInput.checked))
-            });
-            if (!response.ok) throw new Error(await reminderError(response, "Não foi possível atualizar o lembrete."));
-            setReminderFeedback("Lembrete atualizado com sucesso.", "success");
-            await loadReminders();
-        } catch (error) {
-            setReminderFeedback(error instanceof Error ? error.message : "Não foi possível atualizar o lembrete.", "error");
-        } finally {
-            saveButton.disabled = false;
-        }
-    });
-
-    card.append(form);
-    medicationInput.focus();
-}
-
 function renderReminders(reminders) {
+    reminderListTitle.textContent = `Meus lembretes (${reminders.length})`;
     reminderList.replaceChildren();
     if (!reminders.length) {
         const empty = buildEmptyState(
@@ -943,7 +995,7 @@ function renderReminders(reminders) {
                 : "Cadastre um medicamento para criar lembretes.",
             currentMedications.length ? "Adicionar lembrete" : "Ir para Medicamentos",
             currentMedications.length
-                ? () => reminderMedicationInput.focus()
+                ? () => { setReminderWizardExpanded(true); wizardMedicationInput.focus(); }
                 : () => setView("medications")
         );
         empty.className = "reminder-state";
@@ -953,6 +1005,35 @@ function renderReminders(reminders) {
     reminders.forEach((reminder) => reminderList.append(renderReminderCard(reminder)));
 }
 
+function highlightReminderCard(id) {
+    const card = reminderList.querySelector(`[data-reminder-id="${id}"]`);
+    if (!card) return;
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    card.classList.add("reminder-card-highlight");
+    window.setTimeout(() => card.classList.remove("reminder-card-highlight"), 1500);
+}
+
+const REMINDERS_FETCH_TIMEOUT_MS = 15_000;
+
+async function fetchRemindersOnce() {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), REMINDERS_FETCH_TIMEOUT_MS);
+    try {
+        const response = await authenticatedFetch("/api/reminders", { signal: controller.signal });
+        if (!response.ok) throw new Error(await reminderError(response, "Não foi possível carregar os lembretes."));
+        const data = await response.json();
+        if (!data || !Array.isArray(data.reminders)) throw new Error("Resposta inesperada ao carregar lembretes.");
+        return data;
+    } finally {
+        window.clearTimeout(timeout);
+    }
+}
+
+/**
+ * Nunca deixa o estado de carregamento preso: uma tentativa, mais uma repetição
+ * automática antes de mostrar erro com "Tentar novamente" — e uma lista vazia de
+ * verdade (0 lembretes, requisição ok) é sempre o estado vazio normal, nunca um erro.
+ */
 async function loadReminders() {
     setReminderLoading(true);
     reminderList.replaceChildren();
@@ -960,21 +1041,30 @@ async function loadReminders() {
     loading.className = "reminder-state";
     loading.textContent = "Carregando lembretes...";
     reminderList.append(loading);
+
     try {
-        const response = await authenticatedFetch("/api/reminders");
-        if (!response.ok) throw new Error(await reminderError(response, "Não foi possível carregar os lembretes."));
-        const data = await response.json();
-        if (!data || !Array.isArray(data.reminders)) throw new Error("Resposta inesperada ao carregar lembretes.");
+        let data;
+        try {
+            data = await fetchRemindersOnce();
+        } catch (firstError) {
+            console.error("Falha ao carregar lembretes (tentando de novo):", firstError);
+            data = await fetchRemindersOnce();
+        }
+
         renderReminders(data.reminders);
+        currentReminderTimezone = data.timezone || DEFAULT_REMINDER_TIME_ZONE;
+        currentReminders = data.reminders;
         notificationScheduler?.setReminders(data.reminders);
-        document.querySelector("#frequency-gap").hidden = !data.reminders.some((reminder) => reminder.active && ["weekly", "custom"].includes(reminder.frequency));
+        updateNextReminderLine();
         return data.reminders;
     } catch (error) {
+        console.error("Falha ao carregar lembretes:", error);
         reminderList.replaceChildren();
         notificationScheduler?.setReminders([]);
         const message = document.createElement("p");
         message.className = "reminder-state feedback-error";
-        message.textContent = error instanceof Error ? error.message : "Não foi possível carregar os lembretes.";
+        message.textContent = "Não foi possível carregar seus lembretes agora.";
+        message.append(document.createElement("br"), reminderButton("Tentar novamente", "secondary-button", () => loadReminders()));
         reminderList.append(message);
         setReminderFeedback("Verifique sua conexão e tente novamente.", "error");
         return false;
@@ -985,6 +1075,56 @@ async function loadReminders() {
 
 const notificationButton = document.querySelector("#notification-toggle");
 const notificationStatus = document.querySelector("#notification-status");
+const notificationCard = document.querySelector("#notification-card");
+const notificationNext = document.querySelector("#notification-next");
+const notificationTestButton = document.querySelector("#notification-test-button");
+const notificationUnsupportedRetry = document.querySelector("#notification-unsupported-retry");
+const notificationGoToTelegram = document.querySelector("#notification-go-to-telegram");
+const notificationInfoWrapper = document.querySelector("#notification-info-wrapper");
+const notificationInfoButton = document.querySelector("#notification-info-button");
+
+// Carregamento (requisição) e permissão são dois eixos independentes: a permissão
+// pode estar concedida e, ainda assim, o carregamento dos lembretes falhar (e
+// vice-versa). Misturar os dois numa única mensagem foi a causa do card "preso".
+// "unsupported": permissão concedida mas `new Notification()` lança ao tentar
+// exibir (ex.: Chrome Android exige Service Worker, iOS exige instalar como app).
+let reminderLoadState = "idle"; // idle | loading | loaded | error | unsupported
+let currentReminders = [];
+
+// true só enquanto dura a tentativa aberta pelo link "Tentar novamente": ignora o
+// flag salvo e a detecção por user agent por uma vez, mesmo em Android/iPhone/iPad,
+// para o usuário poder checar de novo (ex.: instalou o site como app no iOS).
+let notificationUnsupportedRetryInProgress = false;
+
+/** true quando já sabemos (por uma falha salva ou pelo user agent) que este
+ * navegador não consegue mostrar notificações de verdade, mesmo com permissão. */
+function shouldShowNotificationsUnsupported() {
+    if (notificationUnsupportedRetryInProgress) return false;
+    return readNotificationsUnsupportedFlag(window.localStorage)
+        || isLikelyUnsupportedNotificationUserAgent(navigator.userAgent);
+}
+
+/** Decide, antes de tentar carregar qualquer coisa, se já devemos abrir no estado
+ * "unsupported" — evita pedir permissão ou iniciar o agendador à toa. */
+function applyKnownNotificationUnsupportedState() {
+    const kind = permissionKind();
+    if (kind === "insecure" || kind === "unsupported" || kind === "denied") return false;
+    if (!shouldShowNotificationsUnsupported()) return false;
+    reminderLoadState = "unsupported";
+    return true;
+}
+
+// Uma vez detectado que este navegador não consegue de fato exibir notificações
+// (apesar de permissão concedida), não vale a pena insistir: ficaria tentando a
+// cada 15s e nunca entregaria nada. Persiste em localStorage para já abrir direto
+// nesse estado nas próximas vezes (sem o usuário ter que descobrir de novo).
+function handleNotificationDeliveryUnsupported() {
+    notificationUnsupportedRetryInProgress = false;
+    writeNotificationsUnsupportedFlag(window.localStorage);
+    stopReminderScheduler();
+    reminderLoadState = "unsupported";
+    renderNotificationCard();
+}
 
 function stopReminderNotifications() {
     notificationScheduler?.stop();
@@ -998,128 +1138,256 @@ function stopReminderScheduler() {
     notificationScheduler = null;
 }
 
-function setNotificationState(state, message) {
-    notificationStatus.textContent = message;
-    notificationStatus.dataset.state = state;
-    notificationButton.disabled = state === "pending" || state === "enabled";
-    notificationButton.textContent = state === "enabled" ? "Notificações ativadas" : state === "pending" ? "Aguarde…" : "Ativar notificações";
+function permissionKind() {
+    if (!window.isSecureContext) return "insecure";
+    if (!window.Notification || typeof window.Notification.requestPermission !== "function") return "unsupported";
+    if (window.Notification.permission === "denied") return "denied";
+    if (window.Notification.permission === "granted") return "granted";
+    return "default";
 }
 
-async function enableReminderNotifications() {
-    const notification = window.Notification;
-    const availability = getNotificationAvailability({ notification, isSecureContext: window.isSecureContext });
-    if (availability === "blocked") {
-        setNotificationState("blocked", "Notificações bloqueadas ou indisponíveis. Verifique as permissões do navegador e use uma conexão segura.");
-        return;
-    }
+/** "02:59", "amanhã 02:59" ou "05/11 02:59", segundo a distância em dias de calendário. */
+function formatNextOccurrenceLabel(next, timezone) {
+    const todayKey = getTimezoneParts(new Date(), timezone).dateKey;
+    const occurrenceKey = getTimezoneParts(new Date(next.at), timezone).dateKey;
+    if (occurrenceKey === todayKey) return next.time;
+    const tomorrowKey = getTimezoneParts(new Date(Date.now() + 86_400_000), timezone).dateKey;
+    if (occurrenceKey === tomorrowKey) return `amanhã ${next.time}`;
+    const [, month, day] = occurrenceKey.split("-");
+    return `${day}/${month} ${next.time}`;
+}
 
-    setNotificationState("pending", "Aguardando permissão para mostrar notificações…");
-    let permission;
-    try {
-        permission = notification.permission === "granted" ? "granted" : await notification.requestPermission();
-    } catch {
-        setNotificationState("blocked", "Não foi possível solicitar permissão para notificações neste navegador.");
-        return;
+function updateNextReminderLine() {
+    const next = permissionKind() === "granted" && reminderLoadState === "loaded"
+        ? getNextOccurrence(currentReminders, new Date(), currentReminderTimezone)
+        : null;
+    notificationNext.hidden = !next;
+    if (next) {
+        notificationNext.textContent = `Próximo lembrete: ${formatNextOccurrenceLabel(next, currentReminderTimezone)} (${next.medicationName})`;
     }
-    if (permission !== "granted") {
-        setNotificationState("blocked", permission === "denied"
-            ? "Permissão negada. Altere a permissão de notificações nas configurações do navegador para ativar."
-            : "Permissão não concedida. As notificações continuam desativadas.");
-        return;
-    }
+}
 
+/** Única função que escreve no card: estado sempre consistente, nunca "preso". */
+function renderNotificationCard() {
+    const kind = permissionKind();
+    const active = kind === "granted" && reminderLoadState === "loaded";
+    const flaggedUnsupported = reminderLoadState === "unsupported" && kind !== "insecure" && kind !== "unsupported" && kind !== "denied";
+    notificationCard.classList.toggle("notification-card-enabled", active);
+    notificationTestButton.hidden = !active;
+    notificationUnsupportedRetry.hidden = !flaggedUnsupported;
+    notificationGoToTelegram.hidden = !flaggedUnsupported;
+
+    if (kind === "insecure") {
+        notificationButton.hidden = false;
+        notificationButton.disabled = true;
+        notificationButton.textContent = "Ativar notificações";
+        notificationStatus.textContent = "Notificações exigem uma conexão segura (HTTPS ou localhost).";
+    } else if (kind === "unsupported") {
+        notificationButton.hidden = false;
+        notificationButton.disabled = true;
+        notificationButton.textContent = "Ativar notificações";
+        notificationStatus.textContent = "Este navegador não oferece notificações.";
+    } else if (kind === "denied") {
+        notificationButton.hidden = true;
+        notificationStatus.textContent = "Permissão negada. Para ativar, clique no ícone ao lado do endereço do site e permita notificações.";
+    } else if (flaggedUnsupported) {
+        notificationButton.hidden = true;
+        notificationStatus.textContent = "Este dispositivo não permite notificações do navegador. Em breve você poderá receber lembretes pelo Telegram.";
+    } else if (kind === "default") {
+        notificationButton.hidden = false;
+        notificationButton.disabled = false;
+        notificationButton.textContent = "Ativar notificações";
+        notificationStatus.textContent = "Notificações desativadas. Ative para receber avisos neste navegador.";
+    } else if (reminderLoadState === "loading") {
+        notificationButton.hidden = true;
+        notificationStatus.textContent = "Permissão concedida. Carregando seus lembretes…";
+    } else if (reminderLoadState === "error") {
+        notificationButton.hidden = false;
+        notificationButton.disabled = false;
+        notificationButton.textContent = "Tentar novamente";
+        notificationStatus.textContent = "Permissão concedida, mas não foi possível iniciar as notificações agora.";
+    } else if (reminderLoadState === "loaded") {
+        notificationButton.hidden = true;
+        notificationStatus.textContent = "Notificações ativas";
+    } else {
+        // "idle": permissão já concedida (de uma visita anterior), mas ainda não
+        // tentamos carregar os lembretes agora (ex.: antes do login terminar).
+        notificationButton.hidden = true;
+        notificationStatus.textContent = "Permissão concedida.";
+    }
+    updateNextReminderLine();
+}
+
+notificationUnsupportedRetry.addEventListener("click", () => {
+    clearNotificationsUnsupportedFlag(window.localStorage);
+    notificationUnsupportedRetryInProgress = true;
+    reminderLoadState = "idle";
+    renderNotificationCard();
+    if (permissionKind() === "granted") loadReminderDataForScheduler();
+});
+
+notificationGoToTelegram.addEventListener("click", () => setView("telegram"));
+
+// Tooltip do ⓘ: hover/foco já mostram via CSS (:hover/:focus-within no
+// styles.css); o clique/toque aqui é só para quem não tem hover (touch) e para
+// fechar ao tocar fora ou pressionar Esc.
+notificationInfoButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const isOpen = notificationInfoWrapper.getAttribute("data-open") === "true";
+    notificationInfoWrapper.setAttribute("data-open", String(!isOpen));
+    notificationInfoButton.setAttribute("aria-expanded", String(!isOpen));
+});
+document.addEventListener("click", () => {
+    notificationInfoWrapper.removeAttribute("data-open");
+    notificationInfoButton.setAttribute("aria-expanded", "false");
+});
+document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    notificationInfoWrapper.removeAttribute("data-open");
+    notificationInfoButton.setAttribute("aria-expanded", "false");
+});
+
+async function loadReminderDataForScheduler() {
+    reminderLoadState = "loading";
+    renderNotificationCard();
     try {
         const reminders = await loadReminders();
         if (!Array.isArray(reminders)) throw new Error("reminders-load-failed");
         initializeReminderScheduler(reminders);
-    } catch {
-        notificationScheduler?.stop();
-        notificationScheduler = null;
-        setNotificationState("disabled", "Não foi possível carregar seus lembretes. Verifique a conexão e tente ativar novamente.");
+        reminderLoadState = "loaded";
+    } catch (error) {
+        console.error("Falha ao iniciar notificações de lembretes:", error);
+        stopReminderScheduler();
+        reminderLoadState = "error";
+    } finally {
+        renderNotificationCard();
     }
 }
 
+async function requestNotificationPermissionAndLoad() {
+    if (permissionKind() !== "default" || applyKnownNotificationUnsupportedState()) {
+        renderNotificationCard();
+        return;
+    }
+    let permission;
+    try {
+        permission = await window.Notification.requestPermission();
+    } catch (error) {
+        console.error("Não foi possível solicitar permissão de notificação:", error);
+        renderNotificationCard();
+        return;
+    }
+    renderNotificationCard();
+    if (permission === "granted") await loadReminderDataForScheduler();
+}
+
 function initializeReminderScheduler(reminders) {
-    const availability = getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext });
-    if (availability !== "enabled") {
+    if (permissionKind() !== "granted" || !Number.isSafeInteger(currentAuthUserId) || currentAuthUserId <= 0) {
         stopReminderScheduler();
-        updateNotificationPermissionState();
         return null;
     }
-    if (!Number.isSafeInteger(currentAuthUserId) || currentAuthUserId <= 0) return null;
     notificationScheduler = startReminderSchedulerIfAllowed({
         scheduler: notificationScheduler,
         userId: currentAuthUserId,
+        timezone: currentReminderTimezone,
         notification: window.Notification,
         isSecureContext: window.isSecureContext,
         storage: window.localStorage,
         reminders,
-        onNavigate: () => setView("reminders")
+        onNavigate: () => setView("reminders"),
+        onDeliveryError: handleNotificationDeliveryUnsupported
     });
-    if (notificationScheduler) {
-        setNotificationState("enabled", "Notificações ativadas. O navegador precisa manter esta página ativa para verificar os horários.");
-    }
     return notificationScheduler;
 }
 
-async function refreshReminderNotifications() {
-    const availability = getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext });
-    if (availability === "blocked") {
-        stopReminderScheduler();
-        updateNotificationPermissionState();
-        return;
+/** Atualiza só os dados usados pelo agendador/"próximo lembrete", sem redesenhar a
+ * lista nem o formulário (evita a "piscada" a cada checagem periódica). */
+async function syncReminderDataQuietly() {
+    try {
+        const data = await fetchRemindersOnce();
+        currentReminderTimezone = data.timezone || DEFAULT_REMINDER_TIME_ZONE;
+        currentReminders = data.reminders;
+        notificationScheduler?.setReminders(data.reminders);
+        return data.reminders;
+    } catch (error) {
+        console.error("Falha ao atualizar lembretes em segundo plano:", error);
+        return false;
     }
-    if (availability !== "enabled") {
-        stopReminderScheduler();
-        updateNotificationPermissionState();
-        return;
-    }
-    const reminders = await loadReminders();
-    if (!Array.isArray(reminders)) return;
-    if (!notificationScheduler) initializeReminderScheduler(reminders);
-    else if (document.visibilityState === "visible") notificationScheduler.handleVisibilityChange(true);
 }
 
-function updateNotificationPermissionState() {
-    const availability = getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext });
-    if (availability === "blocked") {
-        setNotificationState("blocked", !window.isSecureContext
-            ? "Notificações exigem uma conexão segura (HTTPS ou localhost)."
-            : window.Notification?.permission === "denied"
-                ? "Permissão negada. Altere a permissão nas configurações do navegador."
-                : "Este navegador não oferece notificações ou a permissão está bloqueada.");
-    } else if (availability === "enabled") {
-        setNotificationState("disabled", "A permissão foi concedida. Entre na conta para retomar as notificações.");
-    } else {
-        setNotificationState("disabled", "Notificações desativadas. Clique para solicitar permissão e ativá-las neste navegador.");
+async function refreshReminderNotifications() {
+    if (permissionKind() !== "granted") {
+        stopReminderScheduler();
+        renderNotificationCard();
+        return;
     }
+    const reminders = await syncReminderDataQuietly();
+    if (!Array.isArray(reminders)) {
+        updateNextReminderLine();
+        return;
+    }
+    if (!notificationScheduler) initializeReminderScheduler(reminders);
+    else if (document.visibilityState === "visible") notificationScheduler.handleVisibilityChange(true);
+    updateNextReminderLine();
 }
 
 notificationButton.addEventListener("click", () => {
-    if (notificationScheduler || notificationButton.disabled) return;
-    enableReminderNotifications();
+    if (notificationButton.disabled) return;
+    const kind = permissionKind();
+    if (kind === "default") requestNotificationPermissionAndLoad();
+    else if (kind === "granted" && reminderLoadState === "error") loadReminderDataForScheduler();
 });
 
-updateNotificationPermissionState();
-
-document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "visible") {
-        notificationScheduler?.handleVisibilityChange(false);
-        return;
+notificationTestButton.addEventListener("click", () => {
+    try {
+        const notification = new window.Notification("MediBot", {
+            body: "Notificação de teste: se você está vendo isso, os avisos de lembrete vão funcionar neste navegador."
+        });
+        notification.onclick = () => { setView("reminders"); notification.close?.(); };
+    } catch (error) {
+        console.error("Falha ao enviar notificação de teste:", error);
+        showToast("Este dispositivo não permite notificações do navegador. Em breve você poderá receber lembretes pelo Telegram.", "error");
+        handleNotificationDeliveryUnsupported();
     }
+});
+
+applyKnownNotificationUnsupportedState();
+renderNotificationCard();
+
+// A permissão pode mudar fora do app (ícone de site nas configurações do navegador)
+// enquanto a aba está aberta: ao voltar o foco, relemos Notification.permission.
+function recheckPermissionOnFocus() {
+    // Esconder a aba não pausa mais o agendador (reminderNotifications.js), então não
+    // há nada a fazer aqui além de não disparar a sincronização de "voltou o foco".
+    if (document.visibilityState !== "visible") return;
     if (!Number.isSafeInteger(currentAuthUserId)) return;
-    const availability = getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext });
-    if (availability !== "enabled") {
+    const kind = permissionKind();
+    if (kind !== "granted") {
         stopReminderScheduler();
-        updateNotificationPermissionState();
+        // Não reseta se já sabemos (flag salva ou user agent) que este navegador não
+        // suporta notificações: "unsupported" é o estado certo mesmo sem permissão
+        // concedida ainda.
+        reminderLoadState = applyKnownNotificationUnsupportedState() ? "unsupported" : "idle";
+        renderNotificationCard();
         return;
     }
-    loadReminders().then((reminders) => {
+    // "unsupported" é terminal para a sessão: já vimos new Notification() falhar
+    // aqui, então não vale reiniciar o agendador a cada vez que a aba volta a ter foco.
+    if (reminderLoadState === "unsupported") return;
+    if (reminderLoadState !== "loaded" && reminderLoadState !== "loading") {
+        loadReminderDataForScheduler();
+        return;
+    }
+    syncReminderDataQuietly().then((reminders) => {
         if (!Array.isArray(reminders)) return;
-        initializeReminderScheduler(reminders);
+        if (!notificationScheduler) initializeReminderScheduler(reminders);
         notificationScheduler?.handleVisibilityChange(true);
+        updateNextReminderLine();
     });
-});
+}
+
+document.addEventListener("visibilitychange", recheckPermissionOnFocus);
+window.addEventListener("focus", recheckPermissionOnFocus);
 
 async function setReminderActive(reminder, active) {
     setReminderFeedback("");
@@ -1130,7 +1398,7 @@ async function setReminderActive(reminder, active) {
             body: JSON.stringify({ active })
         });
         if (!response.ok) throw new Error(await reminderError(response, "Não foi possível atualizar o lembrete."));
-        setReminderFeedback(`Lembrete ${active ? "ativado" : "desativado"} com sucesso.`, "success");
+        showToast(`Lembrete ${active ? "ativado" : "pausado"} com sucesso.`, "success");
         await loadReminders();
     } catch (error) {
         setReminderFeedback(error instanceof Error ? error.message : "Não foi possível atualizar o lembrete.", "error");
@@ -1138,52 +1406,520 @@ async function setReminderActive(reminder, active) {
 }
 
 async function deleteReminder(id, medicationName) {
-    if (!window.confirm(`Excluir o lembrete de "${medicationName}"?`)) return;
+    const confirmed = await confirmDialog(`Excluir o lembrete de "${medicationName}"?`, { title: "Excluir lembrete" });
+    if (!confirmed) return;
     setReminderFeedback("");
     try {
         const response = await authenticatedFetch(`/api/reminders/${id}`, { method: "DELETE" });
         if (!response.ok) throw new Error(await reminderError(response, "Não foi possível excluir o lembrete."));
-        setReminderFeedback("Lembrete excluído com sucesso.", "success");
+        showToast("Lembrete excluído com sucesso.", "success");
+        if (editingReminderId === id) resetReminderWizard();
         await loadReminders();
     } catch (error) {
         setReminderFeedback(error instanceof Error ? error.message : "Não foi possível excluir o lembrete.", "error");
     }
 }
 
-reminderForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const medicationId = reminderMedicationInput.value;
-    const time = reminderTimeInput.value;
-    reminderMedicationInput.classList.toggle("input-error", !medicationId);
-    reminderTimeInput.classList.toggle("input-error", !time);
-    if (!medicationId || !time) {
-        setReminderFeedback("Informe o medicamento e o horário para adicionar o lembrete.", "error");
+// ===== Assistente de criação/edição de lembretes (mesmo formulário para os dois) =====
+
+function todayLocalDateInput() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function defaultFirstTime() {
+    const now = new Date();
+    const roundedMinutes = Math.round(now.getMinutes() / 5) * 5;
+    const hour = (now.getHours() + (roundedMinutes >= 60 ? 1 : 0)) % 24;
+    return `${String(hour).padStart(2, "0")}:${String(roundedMinutes % 60).padStart(2, "0")}`;
+}
+
+function setWizardChipGroupPressed(group, predicate) {
+    group.querySelectorAll(".wizard-chip").forEach((chip) => {
+        chip.setAttribute("aria-pressed", String(predicate(chip)));
+    });
+}
+
+function updateWizardIntervalHint() {
+    wizardIntervalHint.hidden = wizardIntervalHours === null;
+    if (wizardIntervalHours !== null) {
+        wizardIntervalHint.textContent = `Os outros horários acompanham o intervalo de ${wizardIntervalHours} em `
+            + `${wizardIntervalHours} horas. Para horários livres, escolha "Escolher os horários".`;
+    }
+}
+
+/**
+ * Liga um <input type="text"> a um editor de posições fixas (editTimeField ou
+ * editDateField, de reminderWizard.js): dígito sobrescreve a célula sob o cursor
+ * e avança, Backspace/Delete limpam uma célula sem compactar as demais, e colar
+ * substitui o valor inteiro. Usa `beforeinput` (não só `keydown`) porque o
+ * teclado virtual do Android nem sempre manda o keydown com a tecla certa — só
+ * dispara beforeinput com inputType "insertText"/"deleteContentBackward" etc.
+ * `editField` é a função pura (testada em reminderWizard.js); isto aqui é só o
+ * encanamento do DOM, incluindo restaurar o cursor com setSelectionRange logo
+ * depois de reescrever o valor.
+ */
+function wireFixedPositionEditing(input, editField, onEdited) {
+    function applyAction(action) {
+        const result = editField({
+            value: input.value, selectionStart: input.selectionStart, selectionEnd: input.selectionEnd, action
+        });
+        input.value = result.value;
+        input.setSelectionRange(result.cursor, result.cursor);
+        onEdited();
+    }
+
+    input.addEventListener("beforeinput", (event) => {
+        if (event.inputType === "insertText") {
+            event.preventDefault();
+            const digit = (event.data || "").replace(/\D/g, "").slice(0, 1);
+            if (digit) applyAction({ type: "insert", text: digit });
+        } else if (event.inputType === "deleteContentBackward") {
+            event.preventDefault();
+            applyAction({ type: "backspace" });
+        } else if (event.inputType === "deleteContentForward") {
+            event.preventDefault();
+            applyAction({ type: "delete" });
+        } else if (event.inputType !== "insertFromPaste") {
+            // Outras mutações (desfazer, composição de IME etc.) não fazem sentido
+            // num campo de posições fixas: ignora, mantendo o valor atual. O paste
+            // de verdade é tratado abaixo, no evento "paste" (mais confiável que o
+            // beforeinput "insertFromPaste" entre navegadores).
+            event.preventDefault();
+        }
+    });
+    input.addEventListener("paste", (event) => {
+        event.preventDefault();
+        const text = event.clipboardData ? event.clipboardData.getData("text") : "";
+        applyAction({ type: "paste", text });
+    });
+}
+
+/**
+ * Campo de horário com máscara própria (texto + dígitos), em vez do
+ * <input type="time"> nativo: no desktop o segmento focado ficava branco sobre
+ * branco nos dois temas, e no Chrome Android o seletor nativo cortava o botão
+ * "Definir" e o "Limpar" fechava o popup. A edição em si (editTimeField,
+ * normalizeTypedTime, isValidTimeString, stepTimeValue) é testada como função
+ * pura em reminderWizard.js; isto aqui é só o encanamento do DOM.
+ */
+function createMaskedTimeInput({ value, ariaLabel, onCommit }) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "time-field";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "time-field-input";
+    input.inputMode = "numeric";
+    input.autocomplete = "off";
+    input.enterKeyHint = "done";
+    input.maxLength = 5;
+    input.placeholder = "HH:MM";
+    input.required = true;
+    input.setAttribute("aria-label", ariaLabel);
+    input.value = typeof value === "string" ? value : "";
+
+    const errorMessage = document.createElement("p");
+    errorMessage.className = "field-error-message";
+    errorMessage.textContent = "Use um horário entre 00:00 e 23:59";
+    errorMessage.hidden = true;
+
+    function setInvalid(isInvalid) {
+        input.classList.toggle("input-error", isInvalid);
+        input.setAttribute("aria-invalid", String(isInvalid));
+        errorMessage.hidden = !isInvalid;
+    }
+
+    // `fromStep` pula a normalização de dígitos: ArrowUp/Down e PageUp/Down (ver
+    // keydown abaixo) já entregam um "HH:MM" certo vindo de stepTimeValue.
+    function commitValue(nextValue, { fromStep = false } = {}) {
+        if (!nextValue) {
+            input.value = "";
+            setInvalid(false);
+            onCommit("", { invalid: false });
+            return;
+        }
+        const normalized = fromStep ? nextValue : normalizeTypedTime(nextValue);
+        if (!normalized) {
+            setInvalid(true);
+            onCommit(nextValue, { invalid: true });
+            return;
+        }
+        input.value = normalized;
+        const invalid = !isValidTimeString(normalized);
+        setInvalid(invalid);
+        onCommit(normalized, { invalid });
+    }
+
+    wireFixedPositionEditing(input, editTimeField, () => setInvalid(false));
+    input.addEventListener("blur", () => commitValue(input.value));
+    input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            commitValue(input.value);
+        } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+            event.preventDefault();
+            commitValue(stepTimeValue(input.value, event.key === "ArrowUp" ? 1 : -1), { fromStep: true });
+        } else if (event.key === "PageUp" || event.key === "PageDown") {
+            event.preventDefault();
+            commitValue(stepTimeValue(input.value, event.key === "PageUp" ? 60 : -60), { fromStep: true });
+        }
+    });
+
+    wrapper.append(input, errorMessage);
+    return { wrapper, input };
+}
+
+function renderWizardTimeList() {
+    wizardTimeList.replaceChildren();
+    wizardTimes.forEach((time, index) => {
+        const row = document.createElement("div");
+        row.className = "wizard-time-row";
+        const field = createMaskedTimeInput({
+            value: time,
+            ariaLabel: `Horário ${index + 1}`,
+            onCommit: (value, { invalid }) => {
+                if (wizardIntervalHours !== null && !invalid && value) {
+                    // Modo "de X em X horas": recalcula os demais mantendo o intervalo, sem
+                    // reconstruir a lista (preserva o foco no campo que está sendo editado).
+                    wizardTimes = recalculateIntervalTimes(wizardTimes, index, value, wizardIntervalHours);
+                    wizardTimeList.querySelectorAll(".time-field-input").forEach((otherInput, otherIndex) => {
+                        if (otherIndex !== index) otherInput.value = wizardTimes[otherIndex];
+                    });
+                } else {
+                    wizardTimes[index] = value;
+                }
+                updateWizardSummary();
+            }
+        });
+        row.append(field.wrapper);
+        if (wizardTimes.length > 1) {
+            const removeButton = document.createElement("button");
+            removeButton.type = "button";
+            removeButton.className = "icon-button";
+            removeButton.setAttribute("aria-label", "Remover este horário");
+            removeButton.textContent = "✕";
+            removeButton.addEventListener("click", () => {
+                wizardTimes.splice(index, 1);
+                wizardIntervalHours = null;
+                setWizardChipGroupPressed(wizardFrequencyOptions, (candidate) => candidate === wizardChooseTimesButton);
+                renderWizardTimeList();
+                updateWizardSummary();
+            });
+            row.append(removeButton);
+        }
+        wizardTimeList.append(row);
+    });
+    updateWizardIntervalHint();
+}
+
+function updateWizardSummary() {
+    const medicationOption = wizardMedicationInput.selectedOptions[0];
+    const medicationName = medicationOption?.value ? medicationOption.textContent : "Selecione um medicamento";
+    const validTimes = wizardTimes.filter((time) => isValidTimeString(time));
+    const weekdays = wizardDayMode === "custom" ? wizardWeekdays : [];
+    const endsOn = wizardDurationMode === "days"
+        ? computeEndsOn(wizardStartsOnInput.value || todayLocalDateInput(), Number(wizardDurationDaysInput.value))
+        : null;
+    wizardSummary.textContent = summarizeReminder({ medicationName, times: validTimes, weekdays, endsOn, status: "active" });
+}
+
+/**
+ * Único ponto que escreve a data de início: mantém o input oculto (ISO, valor
+ * interno/API) e o campo de texto visível (DD/MM/AAAA) sempre em sincronia.
+ */
+function setStartsOnIso(iso) {
+    wizardStartsOnInput.value = iso || "";
+    wizardStartsOnDisplay.value = iso ? formatDateBr(iso) : "";
+    wizardStartsOnDisplay.classList.remove("input-error");
+    wizardStartsOnError.hidden = true;
+}
+
+/** Ao sair do campo (blur) ou Enter: preenche buracos da edição ("2_/10/2026" ->
+ * "20/10/2026") e valida "DD/MM/AAAA" como data de calendário real. */
+function commitStartsOnDisplay() {
+    const raw = wizardStartsOnDisplay.value.trim();
+    if (!raw) {
+        wizardStartsOnInput.value = "";
+        wizardStartsOnDisplay.classList.remove("input-error");
+        wizardStartsOnError.hidden = true;
+        updateWizardSummary();
         return;
+    }
+    const normalized = normalizeTypedDateBr(raw);
+    if (!normalized || !isValidBrDate(normalized)) {
+        wizardStartsOnDisplay.classList.add("input-error");
+        wizardStartsOnError.hidden = false;
+        return;
+    }
+    wizardStartsOnDisplay.value = normalized;
+    wizardStartsOnInput.value = brDateToIso(normalized);
+    wizardStartsOnDisplay.classList.remove("input-error");
+    wizardStartsOnError.hidden = true;
+    updateWizardSummary();
+}
+
+function resetReminderWizard() {
+    editingReminderId = null;
+    wizardTimes = [];
+    wizardIntervalHours = null;
+    wizardDayMode = "all";
+    wizardWeekdays = [];
+    wizardDurationMode = "forever";
+    reminderWizardForm.reset();
+    wizardMedicationInput.value = "";
+    populateReminderMedicationOptions();
+    renderWizardTimeList();
+    setWizardChipGroupPressed(wizardFrequencyOptions, () => false);
+    setWizardChipGroupPressed(wizardDayModeOptions, (chip) => chip.dataset.dayMode === "all");
+    wizardWeekdayList.hidden = true;
+    wizardWeekdayList.querySelectorAll(".wizard-weekday").forEach((chip) => chip.setAttribute("aria-pressed", "false"));
+    setWizardChipGroupPressed(wizardDurationModeOptions, (chip) => chip.dataset.durationMode === "forever");
+    wizardDurationFields.hidden = true;
+    setStartsOnIso(todayLocalDateInput());
+    wizardDurationDaysInput.value = "";
+    reminderWizardTitle.textContent = "Novo lembrete";
+    wizardSaveButton.textContent = "Salvar lembrete";
+    wizardCancelButton.hidden = true;
+    setReminderFeedback("");
+    updateWizardSummary();
+    setReminderWizardExpanded(false);
+}
+
+function fillWizardForEdit(reminder) {
+    editingReminderId = reminder.id;
+    wizardTimes = reminder.times.length ? [...reminder.times] : [""];
+    wizardIntervalHours = null;
+    wizardDayMode = reminder.weekdays.length ? "custom" : "all";
+    wizardWeekdays = [...reminder.weekdays];
+    wizardDurationMode = reminder.endsOn ? "days" : "forever";
+
+    wizardMedicationInput.value = String(reminder.medicationId);
+    renderWizardTimeList();
+    setWizardChipGroupPressed(wizardFrequencyOptions, (chip) => chip === wizardChooseTimesButton);
+    setWizardChipGroupPressed(wizardDayModeOptions, (chip) => chip.dataset.dayMode === wizardDayMode);
+    wizardWeekdayList.hidden = wizardDayMode !== "custom";
+    wizardWeekdayList.querySelectorAll(".wizard-weekday").forEach((chip) => {
+        chip.setAttribute("aria-pressed", String(wizardWeekdays.includes(Number(chip.dataset.weekday))));
+    });
+    setWizardChipGroupPressed(wizardDurationModeOptions, (chip) => chip.dataset.durationMode === wizardDurationMode);
+    wizardDurationFields.hidden = wizardDurationMode !== "days";
+    setStartsOnIso(reminder.startsOn);
+    wizardDurationDaysInput.value = reminder.endsOn
+        ? String(countDaysInclusive(reminder.startsOn, reminder.endsOn) || "")
+        : "";
+
+    reminderWizardTitle.textContent = "Editar lembrete";
+    wizardSaveButton.textContent = "Salvar alterações";
+    wizardCancelButton.hidden = false;
+    setReminderFeedback("");
+    updateWizardSummary();
+    setReminderWizardExpanded(true);
+    reminderWizardForm.scrollIntoView({ behavior: "smooth", block: "start" });
+    wizardMedicationInput.focus();
+}
+
+/**
+ * Em telas estreitas o formulário fica recolhido atrás do botão "+ Novo lembrete"
+ * (a lista de lembretes vem primeiro); em telas largas (>= 1100px, ver styles.css)
+ * o CSS ignora esta classe e os dois ficam sempre visíveis lado a lado.
+ */
+function setReminderWizardExpanded(expanded) {
+    reminderWizard.classList.toggle("collapsed", !expanded);
+    reminderWizardToggle.setAttribute("aria-expanded", String(expanded));
+    reminderWizardToggle.textContent = expanded ? "Fechar formulário" : "+ Novo lembrete";
+}
+
+reminderWizardToggle.addEventListener("click", () => {
+    const expanding = reminderWizard.classList.contains("collapsed");
+    setReminderWizardExpanded(expanding);
+    if (expanding) wizardMedicationInput.focus();
+});
+
+wizardCancelButton.addEventListener("click", () => resetReminderWizard());
+wizardMedicationInput.addEventListener("change", updateWizardSummary);
+
+wizardFrequencyOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+        const firstTime = wizardTimes.find((time) => isValidTimeString(time)) || defaultFirstTime();
+        if (chip.dataset.count) {
+            wizardIntervalHours = null;
+            wizardTimes = generateEvenlySpacedTimes(firstTime, Number(chip.dataset.count));
+        } else if (chip.dataset.interval) {
+            wizardIntervalHours = Number(chip.dataset.interval);
+            wizardTimes = generateIntervalTimes(firstTime, wizardIntervalHours);
+        } else {
+            // "Escolher os horários": mantém o que já existe (ou abre um horário em branco).
+            wizardIntervalHours = null;
+            if (!wizardTimes.length) wizardTimes = [""];
+        }
+        renderWizardTimeList();
+        setWizardChipGroupPressed(wizardFrequencyOptions, (candidate) => candidate === chip);
+        updateWizardSummary();
+    });
+});
+
+wizardAddTimeButton.addEventListener("click", () => {
+    if (wizardTimes.length >= MAX_TIMES_PER_REMINDER) {
+        setReminderFeedback(`Você pode adicionar no máximo ${MAX_TIMES_PER_REMINDER} horários por lembrete.`, "error");
+        return;
+    }
+    wizardIntervalHours = null;
+    setWizardChipGroupPressed(wizardFrequencyOptions, (candidate) => candidate === wizardChooseTimesButton);
+    wizardTimes.push("");
+    renderWizardTimeList();
+    updateWizardSummary();
+});
+
+wizardDayModeOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+        wizardDayMode = chip.dataset.dayMode;
+        wizardWeekdayList.hidden = wizardDayMode !== "custom";
+        setWizardChipGroupPressed(wizardDayModeOptions, (candidate) => candidate === chip);
+        updateWizardSummary();
+    });
+});
+
+wizardWeekdayList.querySelectorAll(".wizard-weekday").forEach((chip) => {
+    chip.addEventListener("click", () => {
+        const weekday = Number(chip.dataset.weekday);
+        const pressed = chip.getAttribute("aria-pressed") === "true";
+        chip.setAttribute("aria-pressed", String(!pressed));
+        wizardWeekdays = pressed
+            ? wizardWeekdays.filter((day) => day !== weekday)
+            : [...wizardWeekdays, weekday];
+        updateWizardSummary();
+    });
+});
+
+wizardDurationModeOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+        wizardDurationMode = chip.dataset.durationMode;
+        wizardDurationFields.hidden = wizardDurationMode !== "days";
+        if (wizardDurationMode === "days" && !wizardStartsOnInput.value) {
+            setStartsOnIso(todayLocalDateInput());
+        }
+        setWizardChipGroupPressed(wizardDurationModeOptions, (candidate) => candidate === chip);
+        updateWizardSummary();
+    });
+});
+
+wizardDurationDaysInput.addEventListener("input", updateWizardSummary);
+
+wireFixedPositionEditing(wizardStartsOnDisplay, editDateField, () => {
+    wizardStartsOnDisplay.classList.remove("input-error");
+    wizardStartsOnError.hidden = true;
+});
+wizardStartsOnDisplay.addEventListener("blur", commitStartsOnDisplay);
+wizardStartsOnDisplay.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        commitStartsOnDisplay();
+    }
+});
+
+wizardStartsOnCalendarButton.addEventListener("click", () => {
+    wizardStartsOnNativeInput.value = wizardStartsOnInput.value || todayLocalDateInput();
+    if (typeof wizardStartsOnNativeInput.showPicker === "function") {
+        try {
+            wizardStartsOnNativeInput.showPicker();
+            return;
+        } catch {
+            // Alguns navegadores lançam (ex.: showPicker exige gesto do usuário em
+            // certos contextos) — cai no fallback de foco/clique abaixo.
+        }
+    }
+    wizardStartsOnNativeInput.focus();
+    wizardStartsOnNativeInput.click();
+});
+
+// "Limpar" no seletor nativo dispara input/change com value="" só fechando o
+// popup: sem isto, o campo de texto mascarado ficava com a data anterior.
+function syncStartsOnFromNativePicker() {
+    const resolved = resolveStartsOnFromNativePicker(wizardStartsOnNativeInput.value);
+    setStartsOnIso(resolved || "");
+    updateWizardSummary();
+}
+wizardStartsOnNativeInput.addEventListener("input", syncStartsOnFromNativePicker);
+wizardStartsOnNativeInput.addEventListener("change", syncStartsOnFromNativePicker);
+
+reminderWizardForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const medicationId = wizardMedicationInput.value;
+    const times = wizardTimes.filter((time) => isValidTimeString(time));
+    const uniqueTimes = new Set(times);
+    const weekdays = wizardDayMode === "custom" ? wizardWeekdays : [];
+
+    wizardMedicationInput.classList.toggle("input-error", !medicationId);
+    if (!medicationId) {
+        setReminderFeedback("Selecione o medicamento deste lembrete.", "error");
+        return;
+    }
+    if (!times.length || times.length !== wizardTimes.length) {
+        setReminderFeedback("Preencha todos os horários (ou remova os que ficaram em branco).", "error");
+        return;
+    }
+    if (uniqueTimes.size !== times.length) {
+        setReminderFeedback("Os horários não podem se repetir.", "error");
+        return;
+    }
+
+    const payload = { medicationId: Number(medicationId), times, weekdays, active: true };
+    if (wizardDurationMode === "days") {
+        commitStartsOnDisplay();
+        if (wizardStartsOnDisplay.classList.contains("input-error")) {
+            setReminderFeedback("Informe uma data de início válida (DD/MM/AAAA).", "error");
+            return;
+        }
+        const startsOn = wizardStartsOnInput.value || todayLocalDateInput();
+        const totalDays = Number(wizardDurationDaysInput.value);
+        const endsOn = computeEndsOn(startsOn, totalDays);
+        if (!endsOn) {
+            setReminderFeedback("Informe por quantos dias o lembrete deve continuar (1 ou mais).", "error");
+            return;
+        }
+        payload.startsOn = startsOn;
+        payload.endsOn = endsOn;
+    } else {
+        payload.endsOn = null;
+    }
+    if (editingReminderId !== null) {
+        delete payload.active;
     }
 
     setReminderLoading(true);
     setReminderFeedback("");
     try {
-        const response = await authenticatedFetch("/api/reminders", {
-            method: "POST",
+        const url = editingReminderId === null ? "/api/reminders" : `/api/reminders/${editingReminderId}`;
+        const response = await authenticatedFetch(url, {
+            method: editingReminderId === null ? "POST" : "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(reminderBody(medicationId, time, reminderFrequencyInput.value, reminderActiveInput.checked))
+            body: JSON.stringify(payload)
         });
-        if (!response.ok) throw new Error(await reminderError(response, "Não foi possível adicionar o lembrete."));
-        reminderForm.reset();
-        reminderActiveInput.checked = true;
-        setReminderFeedback("Lembrete adicionado com sucesso.", "success");
-        track("reminder_created");
+        if (!response.ok) {
+            throw new Error(await reminderError(response, editingReminderId === null
+                ? "Não foi possível adicionar o lembrete."
+                : "Não foi possível atualizar o lembrete."));
+        }
+        const data = await response.json();
+        const wasEditing = editingReminderId !== null;
+        resetReminderWizard();
+        showToast(wasEditing ? "Lembrete atualizado com sucesso." : "Lembrete adicionado com sucesso.", "success");
+        if (!wasEditing) track("reminder_created");
         await loadReminders();
-        reminderMedicationInput.focus();
+        if (data?.reminder?.id !== undefined) highlightReminderCard(data.reminder.id);
     } catch (error) {
-        setReminderFeedback(error instanceof Error ? error.message : "Não foi possível adicionar o lembrete.", "error");
+        setReminderFeedback(error instanceof Error ? error.message : "Não foi possível salvar o lembrete.", "error");
     } finally {
         setReminderLoading(false);
     }
 });
 
+resetReminderWizard();
+
 const telegramStatus = document.querySelector("#telegram-status");
+const telegramRegenerateAnnouncement = document.querySelector("#telegram-regenerate-announcement");
 const telegramCodeBox = document.querySelector("#telegram-code-box");
 const telegramCodeValue = document.querySelector("#telegram-code-value");
 const telegramCopyButton = document.querySelector("#telegram-copy-button");
@@ -1191,6 +1927,9 @@ const telegramRegenerateButton = document.querySelector("#telegram-regenerate-bu
 const telegramCountdownEl = document.querySelector("#telegram-countdown");
 const telegramCodeRow = document.querySelector("#telegram-code-row");
 const telegramCodeHint = document.querySelector("#telegram-code-hint");
+const telegramLinkStepOpen = document.querySelector("#telegram-link-step-open");
+const telegramLinkStepCommand = document.querySelector("#telegram-link-step-command");
+const telegramLinkCommand = document.querySelector("#telegram-link-command");
 const telegramRefreshButton = document.querySelector("#telegram-refresh-button");
 const telegramOpenLink = document.querySelector("#telegram-open-link");
 const telegramConnectButton = document.querySelector("#telegram-connect-button");
@@ -1256,8 +1995,11 @@ function handleTelegramCodeExpired() {
     clearStoredTelegramLinkCode();
     // A linha "Código: ..." some por completo: a mensagem de status abaixo já diz
     // "Código expirado", então mantê-la visível só duplicaria a informação.
+    telegramLinkStepOpen.hidden = true;
+    telegramLinkStepCommand.hidden = true;
     telegramCodeRow.hidden = true;
     telegramCodeValue.textContent = "";
+    telegramLinkCommand.textContent = "";
     telegramCountdownEl.textContent = "";
     delete telegramCountdownEl.dataset.level;
     // A dica "código expira em 10 minutos" só faz sentido com um código ativo; some
@@ -1291,10 +2033,13 @@ const telegramCountdown = new TelegramLinkCountdownTimer({
 });
 
 function renderTelegramCode({ code, expiresAt, telegramLink }) {
+    telegramLinkStepOpen.hidden = false;
+    telegramLinkStepCommand.hidden = false;
     telegramCodeRow.hidden = false;
     telegramCodeHint.hidden = false;
     telegramStatus.dataset.state = "";
     telegramCodeValue.textContent = code;
+    telegramLinkCommand.textContent = `/vincular ${code}`;
     telegramCodeBox.hidden = false;
     telegramCopyButton.hidden = false;
     telegramRegenerateButton.hidden = false;
@@ -1316,6 +2061,8 @@ function restoreTelegramCodeFromStorage() {
 }
 
 function renderTelegramLinked(linked) {
+    telegramLinked = linked;
+    updateChatTelegramHintVisibility();
     telegramStatus.dataset.state = linked ? "linked" : "";
     telegramStatus.textContent = linked
         ? "Telegram conectado. Você já pode enviar perguntas sobre bulas pelo bot."
@@ -1344,9 +2091,13 @@ async function generateTelegramLinkCode(isRegeneration = false) {
         }
         renderTelegramCode(data);
         storeTelegramLinkCode(data.code, data.expiresAt, data.telegramLink);
-        telegramStatus.textContent = isRegeneration
-            ? "Novo código gerado. O anterior deixou de valer."
-            : "Envie esse código para o bot no Telegram (ou clique no botão 'Abrir no Telegram') para concluir o vínculo.";
+        if (isRegeneration) {
+            // Sem mensagem visível aqui: o contador regressivo (que reinicia com o
+            // novo código) já comunica isso na tela. Só anuncia por leitor de tela.
+            telegramRegenerateAnnouncement.textContent = "Novo código gerado. O anterior deixou de valer.";
+        } else {
+            telegramStatus.textContent = "Código gerado.";
+        }
         track("telegram_link_generated");
     } catch (error) {
         telegramStatus.textContent = error instanceof Error ? error.message : "Não foi possível gerar o código de vínculo.";
@@ -1381,7 +2132,10 @@ async function refreshTelegramLinkStatus() {
 }
 
 async function disconnectTelegram() {
-    if (!window.confirm("Desvincular o Telegram desta conta?")) return;
+    const confirmed = await confirmDialog("Desvincular o Telegram desta conta?", {
+        title: "Desvincular Telegram", confirmLabel: "Desvincular"
+    });
+    if (!confirmed) return;
     telegramDisconnectButton.disabled = true;
     try {
         const response = await authenticatedFetch("/api/telegram/link", { method: "DELETE" });
@@ -1606,6 +2360,7 @@ function setView(view) {
     document.querySelector(".history-panel").hidden = view !== "history";
     document.querySelector(".medications-panel").hidden = view !== "medications";
     document.querySelector(".reminders-panel").hidden = view !== "reminders";
+    document.querySelector(".telegram-panel").hidden = view !== "telegram";
     document.querySelector(".safety-note").hidden = view !== "chat";
     document.querySelector("#sidebar").classList.remove("mobile-open");
     activeView = view;
@@ -1632,6 +2387,7 @@ document.querySelector("#new-chat-button").addEventListener("click", () => {
     document.querySelector(".suggestions").hidden = false;
     feedback.textContent = "";
     addMessage("Olá! Eu sou o MediBot. Posso ajudar você a compreender informações presentes nas bulas dos medicamentos disponíveis no sistema. Faça uma pergunta sobre um medicamento.", "bot");
+    appendChatTelegramHint();
     setView("chat");
     questionInput.focus();
 });

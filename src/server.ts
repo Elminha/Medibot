@@ -11,6 +11,12 @@ import telegramRoutes from "./routes/telegramRoutes.js";
 const app = express();
 const port = Number(process.env.PORT) || 3000;
 
+// Respostas de API são geradas por rota, nunca estáticas: um ETag automático só
+// provoca 304 para dados que podem já ter mudado (ex.: lembretes de outro dispositivo).
+// Os arquivos estáticos em public/ têm seu próprio ETag via express.static, que não é
+// afetado por este disable.
+app.disable("etag");
+
 // Confia em exatamente 1 proxy (a borda da Vercel). A Vercel sobrescreve X-Forwarded-For
 // com o IP real do cliente e não repassa IPs externos, então não há risco de spoofing.
 app.set("trust proxy", 1);

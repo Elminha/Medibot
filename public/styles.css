@@ -127,19 +127,19 @@ textarea { resize: vertical; }
 .icon-button svg { width: 19px; height: 19px; }
 
 /* ===== Switch (checkbox) ===== */
-.active-field, .reminder-active-field { display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--text); font-size: .82rem; font-weight: 650; }
-.active-field input[type="checkbox"], .reminder-active-field input[type="checkbox"] {
+.active-field { display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--text); font-size: .82rem; font-weight: 650; }
+.active-field input[type="checkbox"] {
     appearance: none; -webkit-appearance: none; width: 40px; height: 24px; flex: none; order: 1;
     border-radius: var(--radius-pill); background: var(--border); position: relative; cursor: pointer; width: 40px;
     transition: background var(--transition);
 }
-.active-field input[type="checkbox"]::after, .reminder-active-field input[type="checkbox"]::after {
+.active-field input[type="checkbox"]::after {
     content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%;
     background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform var(--transition);
 }
-.active-field input[type="checkbox"]:checked, .reminder-active-field input[type="checkbox"]:checked { background: var(--primary); }
-.active-field input[type="checkbox"]:checked::after, .reminder-active-field input[type="checkbox"]:checked::after { transform: translateX(16px); }
-.active-field input[type="checkbox"]:focus-visible, .reminder-active-field input[type="checkbox"]:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.active-field input[type="checkbox"]:checked { background: var(--primary); }
+.active-field input[type="checkbox"]:checked::after { transform: translateX(16px); }
+.active-field input[type="checkbox"]:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 
@@ -214,6 +214,11 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .message-label { margin-bottom: 4px; font-size: .74rem; font-weight: 700; letter-spacing: .02em; color: var(--primary); }
 .message-source { margin-top: 12px !important; border-top: 1px solid var(--border-soft); padding-top: 9px; font-size: .8rem; color: var(--text-muted); line-height: 1.5; }
 
+/* Dica discreta (não é uma mensagem do bot) sugerindo conectar o Telegram. */
+.chat-telegram-hint { margin: -6px 0 0; color: var(--text-muted); font-size: .82rem; line-height: 1.5; }
+.chat-telegram-hint .text-button { margin-left: 4px; font-size: inherit; font-weight: 700; }
+.chat-telegram-hint[hidden] { display: none; }
+
 .markdown-content > *:first-child { margin-top: 0; }
 .markdown-content > *:last-child { margin-bottom: 0; }
 .markdown-content p { margin: 0 0 10px; white-space: pre-wrap; }
@@ -262,26 +267,31 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .safety-note[hidden] { display: none !important; }
 
 /* ===== Panels (shared) ===== */
-.history-panel, .medications-panel, .reminders-panel {
+.history-panel, .medications-panel, .reminders-panel, .telegram-panel {
     min-height: 0; flex: 1; overflow: auto; margin: 24px auto; width: min(calc(100% - 48px), 1000px);
     border: 1px solid var(--border-soft); border-radius: var(--radius-lg); background: var(--surface);
     box-shadow: var(--shadow-sm); padding: 26px;
 }
-.history-panel[hidden], .medications-panel[hidden], .reminders-panel[hidden] { display: none !important; }
+.history-panel[hidden], .medications-panel[hidden], .reminders-panel[hidden], .telegram-panel[hidden] { display: none !important; }
+/* A tela de Lembretes ganha mais espaço que as demais (duas colunas, formulário
+   mais horizontal) — min() já protege telas estreitas, então não precisa de
+   media query: em viewports pequenos "calc(100% - 48px)" continua vencendo. */
+.reminders-panel { width: min(calc(100% - 48px), 1360px); }
 .section-heading h2 { margin: 0; color: var(--text); font-size: 1.2rem; }
 .section-heading p { margin: 4px 0 20px; color: var(--text-muted); font-size: .9rem; }
+/* Cabeçalho de página (ex.: "Lembretes", "Telegram"): mesmo texto de antes, só sem
+   estar dentro de um cartão grande — é só o heading padrão da seção, sem caixa. */
+.page-heading { margin-bottom: 4px; }
 
 /* ===== Medication / reminder forms ===== */
-.medication-form, .reminder-form {
+.medication-form {
     display: flex; align-items: flex-end; gap: var(--space-4); flex-wrap: wrap;
     border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-2); padding: var(--space-4);
 }
 .medication-fields { display: grid; flex: 1; grid-template-columns: minmax(160px, 1fr) minmax(130px, .7fr); gap: var(--space-3); }
-.reminder-fields { display: grid; flex: 1; grid-template-columns: minmax(180px, 1fr) minmax(120px, .55fr) minmax(150px, .75fr); gap: var(--space-3); }
-.medication-fields label, .reminder-fields label, .edit-fields label, .reminder-edit-fields label { display: flex; flex-direction: column; gap: 5px; color: var(--text); font-size: .82rem; font-weight: 650; }
-.medication-fields span, .reminder-fields span, .edit-fields span, .reminder-edit-fields span { color: var(--text-muted); font-weight: 400; }
+.medication-fields label, .edit-fields label { display: flex; flex-direction: column; gap: 5px; color: var(--text); font-size: .82rem; font-weight: 650; }
+.medication-fields span, .edit-fields span { color: var(--text-muted); font-weight: 400; }
 .medication-instructions { grid-column: 1 / -1; }
-.reminder-active-field { align-self: end; padding-bottom: 10px; }
 
 .medication-feedback, .reminder-feedback { min-height: 1.3em; margin: 12px 0 0; font-size: .86rem; }
 .feedback-error { color: var(--danger); }
@@ -304,7 +314,8 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .medication-card-header, .reminder-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .medication-name, .reminder-medication-name { margin: 0; color: var(--text); font-size: 1.02rem; font-weight: 700; }
 .medication-status, .reminder-status { display: inline-flex; flex: none; border-radius: var(--radius-pill); background: var(--primary-soft-strong); color: var(--primary); padding: 3px 10px; font-size: .74rem; font-weight: 700; }
-.medication-status.inactive, .reminder-status.inactive { background: var(--surface-2); color: var(--text-muted); }
+.medication-status.inactive, .reminder-status.inactive, .reminder-status.paused { background: var(--surface-2); color: var(--text-muted); }
+.reminder-status.ended { background: var(--danger-soft); color: var(--danger); }
 .medication-meta, .reminder-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
 .medication-dose-pill { display: inline-flex; align-items: center; gap: 6px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text); padding: 4px 11px; font-size: .8rem; font-weight: 600; }
 .reminder-time-badge { display: inline-flex; align-items: center; border-radius: var(--radius-sm); background: var(--primary-soft); color: var(--primary); padding: 4px 11px; font-size: .95rem; font-weight: 750; letter-spacing: .02em; }
@@ -313,10 +324,10 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .medication-actions, .reminder-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .medication-actions button, .reminder-actions button { min-height: 34px; }
 
-.edit-form, .reminder-edit-form { margin-top: 14px; border-top: 1px solid var(--border-soft); padding-top: 14px; }
-.edit-fields, .reminder-edit-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.edit-form { margin-top: 14px; border-top: 1px solid var(--border-soft); padding-top: 14px; }
+.edit-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .edit-fields .edit-instructions { grid-column: 1 / -1; }
-.edit-fields .active-field, .reminder-edit-fields .active-field { grid-column: 1 / -1; }
+.edit-fields .active-field { grid-column: 1 / -1; }
 .edit-actions { display: flex; gap: 8px; margin-top: 14px; }
 
 /* ===== History ===== */
@@ -347,22 +358,179 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .history-detail .markdown-content p { margin: 0 0 10px; }
 .history-detail .markdown-content > *:last-child { margin-bottom: 0; }
 
-/* ===== Notifications ===== */
-.notification-settings { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 0 0 14px; padding: 16px 18px; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-2); }
+/* ===== Notifications (cartão sempre compacto: título pequeno + ⓘ inline) ===== */
+.notification-settings { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 0 0 14px; padding: 12px 16px; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-2); }
 .notification-copy { min-width: 0; }
-.notification-copy h3 { margin: 0 0 5px; color: var(--text); font-size: .98rem; }
-.notification-copy p { margin: 0; color: var(--text-muted); font-size: .84rem; line-height: 1.5; }
-.notification-copy .notification-limit { margin-top: 5px; color: var(--text-muted); font-size: .78rem; }
+.notification-title-row { display: flex; align-items: center; gap: 2px; }
+.notification-copy h3 { margin: 0; color: var(--text); font-size: .88rem; font-weight: 700; }
+.notification-copy p { margin: 2px 0 0; color: var(--text-muted); font-size: .84rem; line-height: 1.5; }
+.notification-copy .notification-limit { color: var(--text-muted); font-size: .78rem; }
 #notification-toggle { flex: none; }
 #notification-toggle:disabled { cursor: wait; }
 #notification-status[data-state="enabled"] { color: var(--primary); }
 #notification-status[data-state="blocked"] { color: var(--danger); }
-.frequency-gap { margin: 0 0 14px; padding: 11px 13px; border: 1px solid var(--warning-border); border-radius: var(--radius-sm); background: var(--warning-soft); color: var(--warning-text); font-size: .83rem; line-height: 1.45; }
+#notification-status[data-state="pending"] { color: var(--text-muted); }
+.notification-unsupported-actions { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; }
+.notification-unsupported-actions .text-button { font-size: .82rem; }
+
+/* O ⓘ fica sempre ao lado do título (não embaixo do texto, numa linha própria). */
+.info-tooltip { position: relative; display: inline-flex; margin-left: 6px; }
+.info-icon-button {
+    display: grid; place-items: center; width: 18px; height: 18px; min-height: 0; padding: 0;
+    border: 1px solid var(--border); border-radius: 50%; background: var(--surface);
+    color: var(--text-muted); font-size: .68rem; line-height: 1; cursor: help;
+    transition: border-color var(--transition), color var(--transition);
+}
+.info-icon-button:hover, .info-icon-button:focus-visible { border-color: var(--primary); color: var(--primary); }
+.info-tooltip .notification-limit {
+    /* Abre para baixo, não para cima: o card fica perto do topo do painel (que tem
+       overflow:auto), então abrir para cima corre o risco de ser cortado. */
+    position: absolute; z-index: 5; top: calc(100% + 8px); left: 0; margin: 0;
+    width: min(260px, 70vw); border: 1px solid var(--border-soft); border-radius: var(--radius-sm);
+    background: var(--surface); box-shadow: var(--shadow-md); padding: 10px 12px;
+    color: var(--text); font-size: .78rem; line-height: 1.45;
+    opacity: 0; visibility: hidden; transform: translateY(-4px); pointer-events: none;
+    transition: opacity var(--transition), transform var(--transition), visibility var(--transition);
+}
+.info-tooltip:hover .notification-limit,
+.info-tooltip:focus-within .notification-limit,
+.info-tooltip[data-open="true"] .notification-limit {
+    opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto;
+}
+
+/* ===== Layout de Lembretes: formulário + lista =====
+   Telas largas (>= 1100px): duas colunas lado a lado, sem rolagem própria — só a
+   rolagem única da página (overflow:auto do .reminders-panel); o formulário fica
+   position:sticky para acompanhar a rolagem da lista ao lado. Abaixo disso
+   ("celular", inclui tablet estreito): uma coluna só, lista primeiro e formulário
+   recolhido atrás do botão "+ Novo lembrete" (ver reminder-wizard-toggle e
+   reminder-wizard.collapsed abaixo). */
+.reminders-columns { display: flex; flex-direction: column; gap: var(--space-4); }
+.reminders-columns > .reminder-list-card { order: 1; }
+.reminder-wizard-toggle { display: none; order: 2; width: 100%; }
+.reminders-columns > .reminder-wizard { order: 3; }
+@media (max-width: 1099.98px) {
+    .reminder-wizard-toggle { display: inline-flex; }
+    .reminder-wizard.collapsed { display: none; }
+}
+@media (min-width: 1100px) {
+    .reminders-columns {
+        /* Formulário ~2/3, lista ~1/3 (lista um pouco mais estreita que antes). */
+        display: grid; grid-template-columns: minmax(420px, 2fr) minmax(300px, 1fr);
+        align-items: start; gap: var(--space-5);
+    }
+    /* "order" (usado para reordenar no celular) também muda a ordem de posição
+       automática no grid, então fixamos a coluna de cada um explicitamente em vez
+       de confiar na ordem do DOM: formulário sempre à esquerda, lista à direita. */
+    .reminders-columns > .reminder-wizard, .reminders-columns > .reminder-list-card { order: 0; }
+    .reminders-columns > .reminder-wizard { grid-column: 1; position: sticky; top: 0; }
+    .reminders-columns > .reminder-list-card { grid-column: 2; }
+    .reminder-wizard-toggle { display: none; }
+    /* O CSS acima ignora .collapsed nesta largura: form e lista ficam sempre
+       visíveis lado a lado, então a classe (só relevante no celular) não precisa
+       de regra alguma aqui. */
+
+    /* Formulário "Novo lembrete" mais horizontal: campos em grade de 2 colunas.
+       Medicamento + "Quantas vezes por dia?" ficam lado a lado (ordem do DOM);
+       "Horários" e "Onde avisar?" (.wizard-step-full) ocupam a largura inteira,
+       o que empurra "Quais dias?" e "Por quanto tempo?" para a linha seguinte,
+       também lado a lado; Resumo + botão Salvar na largura inteira ao final. */
+    .reminder-wizard-form {
+        display: grid; grid-template-columns: 1fr 1fr; align-items: start;
+        gap: var(--space-4) var(--space-5);
+    }
+    .reminder-wizard-form > .wizard-step-full,
+    .reminder-wizard-form > .wizard-summary-block,
+    .reminder-wizard-form > .reminder-feedback,
+    .reminder-wizard-form > #wizard-save-button {
+        grid-column: 1 / -1;
+    }
+}
+
+/* ===== Reminder wizard (criar/editar, reaproveitado para os dois) ===== */
+.reminder-wizard { border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-2); padding: var(--space-4); }
+.reminder-wizard-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.reminder-wizard-heading h3 { margin: 0; color: var(--text); font-size: 1rem; }
+.reminder-wizard-form { display: flex; flex-direction: column; gap: var(--space-4); }
+
+/* Cartão "Meus lembretes" (coluna da direita em telas largas). */
+.reminder-list-card { border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-2); padding: var(--space-4); }
+.reminder-list-heading { margin-bottom: 4px; }
+.reminder-list-heading h3 { margin: 0; color: var(--text); font-size: 1rem; }
+.wizard-step { display: flex; flex-direction: column; gap: 8px; }
+.wizard-step label { display: flex; flex-direction: column; gap: 5px; max-width: 320px; color: var(--text); font-size: .82rem; font-weight: 650; }
+.wizard-step-label { margin: 0; color: var(--text); font-size: .86rem; font-weight: 650; }
+
+.wizard-chip-group { display: flex; flex-wrap: wrap; gap: 8px; }
+.wizard-chip {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 14px;
+    border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface);
+    color: var(--text); font-size: .84rem; font-weight: 600; cursor: pointer;
+    transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+.wizard-chip:hover { border-color: var(--primary); background: var(--primary-soft); }
+.wizard-chip[aria-pressed="true"] { border-color: var(--primary); background: var(--primary); color: var(--on-primary); }
+.wizard-chip:disabled { cursor: not-allowed; color: var(--text-muted); opacity: .7; }
+.wizard-chip:disabled:hover { border-color: var(--border); background: var(--surface); }
+.wizard-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.wizard-soon { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
+
+.wizard-time-list { display: flex; flex-wrap: wrap; gap: 10px; }
+.wizard-time-row { display: inline-flex; align-items: flex-start; gap: 6px; }
+.wizard-time-row .icon-button { flex: none; width: 38px; height: 44px; }
+
+/* Campo de horário com máscara (substitui o <input type="time"> nativo): o
+   <input> herda a aparência padrão dos demais campos (borda, raio, fundo, anel de
+   foco) do seletor genérico "input, textarea, select" no topo deste arquivo. */
+.time-field { display: flex; flex-direction: column; }
+.time-field-input {
+    width: 4.6em; min-height: 44px; padding: 10px 8px; text-align: center;
+    font-size: 1rem; font-variant-numeric: tabular-nums; letter-spacing: .03em;
+    caret-color: var(--primary);
+}
+
+/* Campo "Data de início" com máscara DD/MM/AAAA + botão de calendário (abre o
+   <input type="date"> oculto via showPicker(), ver app.js). */
+.date-field { display: flex; align-items: center; gap: 6px; }
+.date-field input[type="text"] { min-height: 44px; caret-color: var(--primary); }
+.calendar-button { flex: none; width: 44px; height: 44px; border: 1px solid var(--border); }
+.calendar-button:hover { border-color: var(--primary); }
+.calendar-button svg { width: 18px; height: 18px; }
+/* position:relative só para ancorar o <input type="date"> oculto exatamente sobre
+   o botão (mesmo tamanho, via inset:0 abaixo) — sem isso ele ficava posicionado
+   relativo a um ancestral qualquer da página, e o seletor nativo do navegador
+   abria "no rodapé" em vez de perto do botão. */
+.calendar-button-wrapper { position: relative; display: inline-flex; flex: none; }
+/* Mantido "renderizado" (nunca display:none/visibility:hidden): showPicker() exige
+   isso, mesmo que o campo não deva aparecer para quem usa o mouse/dedo. */
+.visually-hidden-field {
+    position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0;
+    opacity: 0; pointer-events: none;
+}
+
+.field-error-message { margin: 4px 0 0; color: var(--danger); font-size: .76rem; line-height: 1.35; }
+.field-error-message[hidden] { display: none; }
+
+.wizard-weekday-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+
+.wizard-duration-fields { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: 4px; }
+.wizard-duration-fields label { display: flex; flex-direction: column; gap: 5px; color: var(--text); font-size: .82rem; font-weight: 650; }
+
+.wizard-summary-block { margin: 0; }
+.wizard-summary-label { display: block; margin: 0 0 4px; color: var(--text-muted); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.wizard-summary { margin: 0; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--surface); padding: 10px 13px; color: var(--text-muted); font-size: .84rem; line-height: 1.45; }
 
 /* ===== Telegram ===== */
 .telegram-card { align-items: flex-start; }
 .telegram-card .telegram-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: none; }
 .telegram-code-box { margin-top: 10px; }
+/* Os dois passos para concluir o vínculo (abrir no Telegram vs. já ter a conversa
+   e copiar o comando) — texto normal, não "secundário" como o resto do card. */
+.telegram-link-step { color: var(--text) !important; font-size: .88rem !important; margin: 0 0 6px !important; }
+.telegram-link-step code {
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: .92em;
+    background: var(--surface); border-radius: 4px; padding: 2px 6px; color: var(--primary);
+}
 .telegram-code-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text) !important; font-size: .9rem !important; }
 .telegram-code-row strong { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 1rem; letter-spacing: .06em; color: var(--primary); }
 .icon-text-button { display: inline-flex; align-items: center; gap: 6px; }
@@ -374,6 +542,19 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 #telegram-status[data-state="linked"] { color: var(--primary); }
 #telegram-status[data-state="expired"] { color: var(--danger); }
 #telegram-open-link { text-decoration: none; }
+
+/* Tela "Telegram": cartão de vínculo (igual antes, só mudou de lugar) + bloco
+   explicativo do que já funciona e do que vem a seguir. */
+.telegram-card .notification-copy h3 { margin: 0 0 5px; font-size: .98rem; }
+.telegram-info-card {
+    margin-top: 16px; border: 1px solid var(--border-soft); border-radius: var(--radius-md);
+    background: var(--surface-2); padding: var(--space-4);
+}
+.telegram-info-card h3 { margin: 0 0 8px; color: var(--text); font-size: .95rem; }
+.telegram-info-card p { margin: 0 0 10px; color: var(--text-muted); font-size: .88rem; line-height: 1.5; }
+.telegram-command-list { margin: 0 0 12px; padding-left: 20px; color: var(--text); font-size: .88rem; line-height: 1.7; }
+.telegram-command-list code { background: var(--surface); border-radius: 4px; padding: 2px 6px; font-size: .86em; color: var(--primary); }
+.telegram-soon-note { margin: 0; color: var(--text-muted); font-size: .82rem; font-style: italic; }
 
 @media (max-width: 760px) {
     .telegram-card .telegram-actions { align-items: stretch; width: 100%; }
@@ -400,12 +581,14 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
     .suggestions button { flex: none; }
     .composer { width: calc(100% - 24px); margin-bottom: 28px; border-radius: 16px; }
     .safety-note { padding: 0 12px; font-size: .68rem; }
-    .history-panel, .medications-panel, .reminders-panel { width: calc(100% - 24px); margin: 14px auto; padding: 18px; }
-    .medication-fields, .edit-fields, .reminder-fields, .reminder-edit-fields, .history-layout { grid-template-columns: 1fr; }
-    .medication-form, .reminder-form { align-items: stretch; flex-direction: column; }
-    .reminder-active-field { align-self: auto; padding-bottom: 0; }
+    .history-panel, .medications-panel, .reminders-panel, .telegram-panel { width: calc(100% - 24px); margin: 14px auto; padding: 18px; }
+    .medication-fields, .edit-fields, .history-layout { grid-template-columns: 1fr; }
+    .medication-form { align-items: stretch; flex-direction: column; }
     .notification-settings { align-items: stretch; flex-direction: column; gap: 12px; padding: 14px; }
     .notification-settings #notification-toggle { width: 100%; }
+    .reminder-wizard-heading { flex-wrap: wrap; }
+    .wizard-step label { max-width: none; }
+    .wizard-chip { min-height: 42px; }
 }
 @media (max-width: 480px) {
     .auth-card { padding: 24px; }
@@ -428,3 +611,55 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
     .cookie-banner-actions { flex-direction: column-reverse; }
     .cookie-banner-actions button { width: 100%; }
 }
+
+/* ===== Toast (feedback de sucesso, não fica preso no formulário) ===== */
+.toast-container {
+    position: fixed; z-index: 200; right: 20px; bottom: 20px; display: flex;
+    flex-direction: column; gap: 10px; width: min(320px, calc(100% - 40px)); pointer-events: none;
+}
+.toast {
+    display: flex; align-items: center; gap: 10px; border-radius: var(--radius-md);
+    background: var(--surface); border: 1px solid var(--border-soft); box-shadow: var(--shadow-md);
+    padding: 12px 14px; color: var(--text); font-size: .86rem; font-weight: 600;
+    opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .2s; pointer-events: auto;
+}
+.toast.toast-visible { opacity: 1; transform: translateY(0); }
+.toast.toast-success { border-color: var(--primary-soft-strong); }
+.toast.toast-success::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+.toast.toast-error { border-color: var(--danger-soft); }
+.toast.toast-error::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+@media (max-width: 480px) {
+    .toast-container { right: 10px; left: 10px; bottom: 100px; width: auto; }
+}
+
+/* ===== Diálogo de confirmação (substitui window.confirm em Medicamentos/Lembretes) ===== */
+.confirm-dialog-backdrop {
+    position: fixed; z-index: 150; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(10, 20, 17, .45); padding: 20px;
+}
+.confirm-dialog-backdrop[hidden] { display: none !important; }
+.confirm-dialog {
+    width: min(360px, 100%); border-radius: var(--radius-lg); background: var(--surface);
+    box-shadow: var(--shadow-lg); padding: 22px;
+}
+.confirm-dialog h3 { margin: 0 0 10px; color: var(--text); font-size: 1.05rem; }
+.confirm-dialog p { margin: 0 0 18px; color: var(--text-muted); font-size: .9rem; line-height: 1.5; }
+.confirm-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+/* ===== Card de notificações: estado "ativas" (bolinha verde) ===== */
+.notification-actions { display: flex; flex: none; align-items: center; gap: 8px; }
+.notification-settings.notification-card-enabled #notification-status { display: inline-flex; align-items: center; gap: 7px; font-weight: 650; }
+.notification-settings.notification-card-enabled #notification-status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+.notification-next { margin: 4px 0 0; color: var(--text-muted); font-size: .8rem; font-weight: 600; }
+#notification-test-button { flex: none; }
+
+/* ===== Destaque rápido no card recém-criado/editado ===== */
+@keyframes reminder-card-highlight-pulse {
+    0% { box-shadow: 0 0 0 0 var(--primary-soft-strong); }
+    70% { box-shadow: 0 0 0 8px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}
+.reminder-card.reminder-card-highlight { border-color: var(--primary); animation: reminder-card-highlight-pulse 1.4s ease-out; }
+
+/* ===== Dica do modo "de X em X horas" ===== */
+.wizard-hint { margin: 2px 0 0; color: var(--text-muted); font-size: .78rem; line-height: 1.4; }
