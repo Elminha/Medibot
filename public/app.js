@@ -500,7 +500,7 @@ function appendChatTelegramHint() {
     hint.id = "chat-telegram-hint";
     hint.hidden = telegramLinked === true;
     hint.append(
-        document.createTextNode("Dica: conecte o Telegram para consultar bulas e receber notificações."),
+        document.createTextNode("Dica: use o MediBot também no Telegram e, em breve, receba seus lembretes por lá."),
         medicationButton("Conectar Telegram", "text-button", () => setView("telegram"))
     );
     messages.append(hint);
@@ -1919,6 +1919,7 @@ reminderWizardForm.addEventListener("submit", async (event) => {
 resetReminderWizard();
 
 const telegramStatus = document.querySelector("#telegram-status");
+const telegramRegenerateAnnouncement = document.querySelector("#telegram-regenerate-announcement");
 const telegramCodeBox = document.querySelector("#telegram-code-box");
 const telegramCodeValue = document.querySelector("#telegram-code-value");
 const telegramCopyButton = document.querySelector("#telegram-copy-button");
@@ -2090,9 +2091,13 @@ async function generateTelegramLinkCode(isRegeneration = false) {
         }
         renderTelegramCode(data);
         storeTelegramLinkCode(data.code, data.expiresAt, data.telegramLink);
-        telegramStatus.textContent = isRegeneration
-            ? "Novo código gerado. O anterior deixou de valer."
-            : "Código gerado.";
+        if (isRegeneration) {
+            // Sem mensagem visível aqui: o contador regressivo (que reinicia com o
+            // novo código) já comunica isso na tela. Só anuncia por leitor de tela.
+            telegramRegenerateAnnouncement.textContent = "Novo código gerado. O anterior deixou de valer.";
+        } else {
+            telegramStatus.textContent = "Código gerado.";
+        }
         track("telegram_link_generated");
     } catch (error) {
         telegramStatus.textContent = error instanceof Error ? error.message : "Não foi possível gerar o código de vínculo.";
