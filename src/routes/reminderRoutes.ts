@@ -7,19 +7,22 @@ import {
     getReminderById,
     listReminders,
     ReminderNotFoundError,
-    REMINDER_FREQUENCIES,
     updateReminder,
-    type ReminderFrequency,
     type ReminderInput,
     type ReminderUpdateInput
 } from "../services/reminderService.js";
 
 const reminderRoutes = Router();
+const MAX_TIMES_PER_REMINDER = 12;
 
 reminderRoutes.use(requireAuthentication);
 
 function getAuthenticatedUserId(request: AuthenticatedRequest): number {
     return request.auth!.userId;
+}
+
+function getAuthenticatedTimezone(request: AuthenticatedRequest): string {
+    return request.auth!.user.timezone;
 }
 
 function parsePositiveInteger(value: unknown): number | undefined {
@@ -42,12 +45,55 @@ function isValidTime(value: unknown): value is string {
     return typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
-function isValidFrequency(value: unknown): value is ReminderFrequency {
-    return typeof value === "string" && REMINDER_FREQUENCIES.includes(value as ReminderFrequency);
+function isValidDate(value: unknown): value is string {
+    return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
 }
 
 function isValidActive(value: unknown): value is boolean {
     return typeof value === "boolean";
+}
+
+function parseTimes(value: unknown): string[] | undefined {
+    if (!Array.isArray(value) || value.length < 1 || value.length > MAX_TIMES_PER_REMINDER) {
+        return undefined;
+    }
+
+    if (!value.every(isValidTime)) {
+        return undefined;
+    }
+
+    if (new Set(value).size !== value.length) {
+        return undefined;
+    }
+
+    return value as string[];
+}
+
+function parseWeekdays(value: unknown): number[] | undefined {
+    if (!Array.isArray(value)) {
+        return undefined;
+    }
+
+    const isValidWeekday = (item: unknown): item is number =>
+        typeof item === "number" && Number.isInteger(item) && item >= 0 && item <= 6;
+
+    if (!value.every(isValidWeekday)) {
+        return undefined;
+    }
+
+    if (new Set(value).size !== value.length) {
+        return undefined;
+    }
+
+    return value as number[];
+}
+
+function parseEndsOn(value: unknown): string | null | undefined {
+    if (value === null) {
+        return null;
+    }
+
+    return isValidDate(value) ? value : undefined;
 }
 
 function validateReminderInput(body: unknown): ReminderInput | undefined {
@@ -55,18 +101,39 @@ function validateReminderInput(body: unknown): ReminderInput | undefined {
         return undefined;
     }
 
-    const { medicationId, time, frequency, active } = body as Record<string, unknown>;
+    const { medicationId, times, weekdays, startsOn, endsOn, active } = body as Record<string, unknown>;
     const validMedicationId = parsePositiveInteger(medicationId);
+    const validTimes = parseTimes(times);
+    const validWeekdays = weekdays === undefined ? [] : parseWeekdays(weekdays);
 
-    if (!validMedicationId || !isValidTime(time) || !isValidFrequency(frequency)) {
+    if (!validMedicationId || !validTimes || !validWeekdays) {
         return undefined;
+    }
+
+    if (startsOn !== undefined && !isValidDate(startsOn)) {
+        return undefined;
+    }
+
+    let validEndsOn: string | null | undefined = undefined;
+    if (endsOn !== undefined) {
+        validEndsOn = parseEndsOn(endsOn);
+        if (validEndsOn === undefined) {
+            return undefined;
+        }
     }
 
     if (active !== undefined && !isValidActive(active)) {
         return undefined;
     }
 
-    return { medicationId: validMedicationId, time, frequency, active };
+    return {
+        medicationId: validMedicationId,
+        times: validTimes,
+        weekdays: validWeekdays,
+        startsOn: startsOn as string | undefined,
+        endsOn: validEndsOn,
+        active: active as boolean | undefined
+    };
 }
 
 function validateReminderUpdate(body: unknown): ReminderUpdateInput | undefined {
@@ -74,9 +141,9 @@ function validateReminderUpdate(body: unknown): ReminderUpdateInput | undefined 
         return undefined;
     }
 
-    const { medicationId, time, frequency, active } = body as Record<string, unknown>;
-    const hasUpdate = medicationId !== undefined || time !== undefined
-        || frequency !== undefined || active !== undefined;
+    const { medicationId, times, weekdays, startsOn, endsOn, active } = body as Record<string, unknown>;
+    const hasUpdate = medicationId !== undefined || times !== undefined || weekdays !== undefined
+        || startsOn !== undefined || endsOn !== undefined || active !== undefined;
 
     if (!hasUpdate) {
         return undefined;
@@ -86,12 +153,32 @@ function validateReminderUpdate(body: unknown): ReminderUpdateInput | undefined 
         return undefined;
     }
 
-    if (time !== undefined && !isValidTime(time)) {
+    let validTimes: string[] | undefined;
+    if (times !== undefined) {
+        validTimes = parseTimes(times);
+        if (!validTimes) {
+            return undefined;
+        }
+    }
+
+    let validWeekdays: number[] | undefined;
+    if (weekdays !== undefined) {
+        validWeekdays = parseWeekdays(weekdays);
+        if (!validWeekdays) {
+            return undefined;
+        }
+    }
+
+    if (startsOn !== undefined && !isValidDate(startsOn)) {
         return undefined;
     }
 
-    if (frequency !== undefined && !isValidFrequency(frequency)) {
-        return undefined;
+    let validEndsOn: string | null | undefined;
+    if (endsOn !== undefined) {
+        validEndsOn = parseEndsOn(endsOn);
+        if (validEndsOn === undefined) {
+            return undefined;
+        }
     }
 
     if (active !== undefined && !isValidActive(active)) {
@@ -100,10 +187,17 @@ function validateReminderUpdate(body: unknown): ReminderUpdateInput | undefined 
 
     return {
         medicationId: medicationId as number | undefined,
-        time: time as string | undefined,
-        frequency: frequency as ReminderFrequency | undefined,
+        times: validTimes,
+        weekdays: validWeekdays,
+        startsOn: startsOn as string | undefined,
+        endsOn: validEndsOn,
         active: active as boolean | undefined
     };
+}
+
+function isCheckViolation(error: unknown): boolean {
+    return typeof error === "object" && error !== null && "code" in error
+        && (error as { code: unknown }).code === "23514";
 }
 
 function sendError(response: Response, error: unknown): Response | undefined {
@@ -111,12 +205,19 @@ function sendError(response: Response, error: unknown): Response | undefined {
         return response.status(404).json({ error: error.message });
     }
 
+    if (isCheckViolation(error)) {
+        return response.status(400).json({
+            error: "A data de término deve ser igual ou posterior à data de início."
+        });
+    }
+
     return undefined;
 }
 
 function invalidReminderResponse(response: Response): Response {
     return response.status(400).json({
-        error: "Informe medicationId, time (HH:MM) e frequency v\u00e1lidos."
+        error: "Informe medicationId, de 1 a 12 horários (HH:MM, sem repetir) e dias da semana "
+            + "válidos (0 a 6, sem repetir; vazio significa todos os dias)."
     });
 }
 
@@ -128,20 +229,26 @@ reminderRoutes.post("/", async (request: AuthenticatedRequest, response: Respons
     }
 
     try {
-        const reminder = await createReminder(getAuthenticatedUserId(request), input);
+        const reminder = await createReminder(
+            getAuthenticatedUserId(request),
+            input,
+            getAuthenticatedTimezone(request)
+        );
         return response.status(201).json({ reminder });
     } catch (error) {
         return sendError(response, error)
-            ?? response.status(500).json({ error: "N\u00e3o foi poss\u00edvel cadastrar o lembrete." });
+            ?? response.status(500).json({ error: "Não foi possível cadastrar o lembrete." });
     }
 });
 
 reminderRoutes.get("/", async (request: AuthenticatedRequest, response: Response) => {
+    const timezone = getAuthenticatedTimezone(request);
+
     try {
-        const reminders = await listReminders(getAuthenticatedUserId(request));
-        return response.json({ reminders });
+        const reminders = await listReminders(getAuthenticatedUserId(request), timezone);
+        return response.json({ reminders, timezone });
     } catch {
-        return response.status(500).json({ error: "N\u00e3o foi poss\u00edvel listar os lembretes." });
+        return response.status(500).json({ error: "Não foi possível listar os lembretes." });
     }
 });
 
@@ -153,11 +260,11 @@ reminderRoutes.get("/:id", async (request: AuthenticatedRequest, response: Respo
     }
 
     try {
-        const reminder = await getReminderById(getAuthenticatedUserId(request), id);
+        const reminder = await getReminderById(getAuthenticatedUserId(request), id, getAuthenticatedTimezone(request));
         return response.json({ reminder });
     } catch (error) {
         return sendError(response, error)
-            ?? response.status(500).json({ error: "N\u00e3o foi poss\u00edvel buscar o lembrete." });
+            ?? response.status(500).json({ error: "Não foi possível buscar o lembrete." });
     }
 });
 
@@ -175,11 +282,16 @@ reminderRoutes.put("/:id", async (request: AuthenticatedRequest, response: Respo
     }
 
     try {
-        const reminder = await updateReminder(getAuthenticatedUserId(request), id, input);
+        const reminder = await updateReminder(
+            getAuthenticatedUserId(request),
+            id,
+            input,
+            getAuthenticatedTimezone(request)
+        );
         return response.json({ reminder });
     } catch (error) {
         return sendError(response, error)
-            ?? response.status(500).json({ error: "N\u00e3o foi poss\u00edvel atualizar o lembrete." });
+            ?? response.status(500).json({ error: "Não foi possível atualizar o lembrete." });
     }
 });
 
@@ -195,7 +307,7 @@ reminderRoutes.delete("/:id", async (request: AuthenticatedRequest, response: Re
         return response.status(204).send();
     } catch (error) {
         return sendError(response, error)
-            ?? response.status(500).json({ error: "N\u00e3o foi poss\u00edvel excluir o lembrete." });
+            ?? response.status(500).json({ error: "Não foi possível excluir o lembrete." });
     }
 });
 

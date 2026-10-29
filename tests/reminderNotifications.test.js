@@ -1,40 +1,61 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+    DEFAULT_REMINDER_TIME_ZONE,
     fetchAuthenticatedReminders,
     getNotificationAvailability,
-    getReminderOccurrence,
-    getSaoPauloParts,
+    getReminderOccurrences,
+    getTimezoneParts,
     ReminderNotificationScheduler,
     startReminderSchedulerIfAllowed
 } from "../public/reminderNotifications.js";
 
-const active = (id, time, frequency = "daily") => ({ id, time, frequency, active: true });
+const active = (id, times, overrides = {}) => ({
+    id, times, weekdays: [], startsOn: null, endsOn: null, active: true, ...overrides
+});
 
-test("interpreta horário e dia no fuso America/Sao_Paulo, não no fuso do dispositivo", () => {
+test("interpreta horário e dia no fuso informado, não no fuso do dispositivo", () => {
     const instant = new Date("2024-01-08T13:30:00.000Z");
-    assert.deepEqual(getSaoPauloParts(instant), { year: 2024, month: 1, day: 8, hour: 10, minute: 30, second: 0, weekday: 1 });
-    assert.equal(getReminderOccurrence(active(3, "10:30"), instant).at, instant.getTime());
+    assert.deepEqual(
+        getTimezoneParts(instant, DEFAULT_REMINDER_TIME_ZONE),
+        { year: 2024, month: 1, day: 8, hour: 10, minute: 30, second: 0, weekday: 1, dateKey: "2024-01-08" }
+    );
+    const occurrences = getReminderOccurrences(active(3, ["10:30"]), instant, DEFAULT_REMINDER_TIME_ZONE);
+    assert.equal(occurrences.length, 1);
+    assert.equal(occurrences[0].at, instant.getTime());
 });
 
-test("daily e weekdays respeitam dias e mudança de data local", () => {
+test("vários horários no mesmo lembrete geram uma ocorrência por horário", () => {
+    const instant = new Date("2024-01-08T00:00:00.000Z");
+    const occurrences = getReminderOccurrences(active(9, ["08:00", "14:00", "20:00"]), instant, DEFAULT_REMINDER_TIME_ZONE);
+    assert.equal(occurrences.length, 3);
+    assert.deepEqual(occurrences.map((o) => o.key.split("T")[1]), ["08:00", "14:00", "20:00"]);
+});
+
+test("dias vazios disparam todos os dias; dias específicos respeitam o dia da semana local", () => {
     const monday = new Date("2024-01-08T13:30:00.000Z");
-    const tuesday = new Date("2024-01-09T13:30:00.000Z");
     const sunday = new Date("2024-01-14T13:30:00.000Z");
-    assert.ok(getReminderOccurrence(active(1, "10:30", "daily"), tuesday));
-    assert.ok(getReminderOccurrence(active(1, "10:30", "weekdays"), monday));
-    assert.equal(getReminderOccurrence(active(1, "10:30", "weekdays"), sunday), null);
-    assert.notEqual(getReminderOccurrence(active(1, "10:30"), monday).key, getReminderOccurrence(active(1, "10:30"), tuesday).key);
+    assert.equal(getReminderOccurrences(active(1, ["10:30"]), monday).length, 1);
+    assert.equal(getReminderOccurrences(active(1, ["10:30"], { weekdays: [1, 2, 3, 4, 5] }), monday).length, 1);
+    assert.equal(getReminderOccurrences(active(1, ["10:30"], { weekdays: [1, 2, 3, 4, 5] }), sunday).length, 0);
+    assert.equal(getReminderOccurrences(active(1, ["10:30"], { weekdays: [0, 6] }), sunday).length, 1);
 });
 
-test("weekly e custom não disparam sem dias definidos", () => {
+test("respeita vigência (startsOn/endsOn) no fuso informado", () => {
+    const beforeStart = new Date("2024-01-07T13:30:00.000Z");
+    const onStart = new Date("2024-01-08T13:30:00.000Z");
+    const afterEnd = new Date("2024-01-09T13:30:00.000Z");
+    const reminder = active(5, ["10:30"], { startsOn: "2024-01-08", endsOn: "2024-01-08" });
+    assert.equal(getReminderOccurrences(reminder, beforeStart).length, 0);
+    assert.equal(getReminderOccurrences(reminder, onStart).length, 1);
+    assert.equal(getReminderOccurrences(reminder, afterEnd).length, 0);
+});
+
+test("lembretes inativos ou sem horário válido não geram ocorrência", () => {
     const now = new Date("2024-01-08T13:30:00.000Z");
-    assert.equal(getReminderOccurrence(active(1, "10:30", "weekly"), now), null);
-    assert.equal(getReminderOccurrence(active(1, "10:30", "custom"), now), null);
-});
-
-test("lembretes inativos são ignorados", () => {
-    assert.equal(getReminderOccurrence({ ...active(1, "10:30"), active: false }, new Date("2024-01-08T13:30:00Z")), null);
+    assert.equal(getReminderOccurrences({ ...active(1, ["10:30"]), active: false }, now).length, 0);
+    assert.equal(getReminderOccurrences(active(1, []), now).length, 0);
+    assert.equal(getReminderOccurrences(active(1, ["25:99"]), now).length, 0);
 });
 
 test("cruza o horário entre verificações e não repete na mesma ocorrência", () => {
@@ -44,7 +65,7 @@ test("cruza o horário entre verificações e não repete na mesma ocorrência",
     const storage = new Map();
     const store = { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) };
     const scheduler = new ReminderNotificationScheduler({ userId: 12, notification: MockNotification, storage: store, onNavigate() {}, now: () => now, setIntervalFn: () => 1, clearIntervalFn() {} });
-    scheduler.setReminders([active(9, "10:30")]);
+    scheduler.setReminders([active(9, ["10:30"])]);
     scheduler.start();
     assert.equal(instances.length, 0);
     now = new Date("2024-01-08T13:30:03.000Z");
@@ -67,7 +88,7 @@ test("permissão concedida retoma automaticamente o agendador sem novo pedido", 
         userId: 22,
         notification: MockNotification,
         isSecureContext: true,
-        reminders: [active(14, "10:30")],
+        reminders: [active(14, ["10:30"])],
         storage: null,
         onNavigate() {},
         now: () => now,
@@ -76,11 +97,34 @@ test("permissão concedida retoma automaticamente o agendador sem novo pedido", 
     };
     let scheduler = startReminderSchedulerIfAllowed(options);
     assert.ok(scheduler);
-    scheduler = startReminderSchedulerIfAllowed({ ...options, scheduler, reminders: [active(14, "10:30")] });
+    scheduler = startReminderSchedulerIfAllowed({ ...options, scheduler, reminders: [active(14, ["10:30"])] });
     assert.equal(intervalCount, 1);
     assert.equal(permissionRequests, 0);
     assert.equal(notifications.length, 1);
     scheduler.stop();
+});
+
+test("troca de fuso do usuário recria o agendador em vez de reaproveitar o anterior", () => {
+    let intervalCount = 0;
+    const options = {
+        userId: 22,
+        timezone: "America/Sao_Paulo",
+        notification: class { constructor() {} },
+        isSecureContext: true,
+        reminders: [],
+        storage: null,
+        onNavigate() {},
+        now: () => new Date("2024-01-08T13:30:20.000Z"),
+        setIntervalFn: () => { intervalCount += 1; return intervalCount; },
+        clearIntervalFn() {}
+    };
+    options.notification.permission = "granted";
+    options.notification.requestPermission = () => {};
+    const first = startReminderSchedulerIfAllowed(options);
+    const second = startReminderSchedulerIfAllowed({ ...options, scheduler: first, timezone: "America/Manaus" });
+    assert.notEqual(first, second);
+    assert.equal(second.timezone, "America/Manaus");
+    second.stop();
 });
 
 test("retomada após voltar de aba em segundo plano notifica no máximo uma vez dentro da tolerância", () => {
@@ -90,7 +134,7 @@ test("retomada após voltar de aba em segundo plano notifica no máximo uma vez 
     let intervalId = 0;
     class MockNotification { constructor(_title, options) { notifications.push(options); } }
     const scheduler = new ReminderNotificationScheduler({ userId: 4, notification: MockNotification, storage: null, onNavigate() {}, now: () => now, setIntervalFn: () => { activeIntervals += 1; return ++intervalId; }, clearIntervalFn: () => { activeIntervals -= 1; } });
-    scheduler.setReminders([active(7, "10:30")]);
+    scheduler.setReminders([active(7, ["10:30"])]);
     scheduler.start();
     scheduler.handleVisibilityChange(false);
     assert.equal(activeIntervals, 0);
@@ -107,7 +151,7 @@ test("retomada ignora ocorrências vencidas há mais de cinco minutos", () => {
     const notifications = [];
     class MockNotification { constructor(_title, options) { notifications.push(options); } }
     const scheduler = new ReminderNotificationScheduler({ userId: 4, notification: MockNotification, storage: null, onNavigate() {}, now: () => now, setIntervalFn: () => 1, clearIntervalFn() {} });
-    scheduler.setReminders([active(7, "10:30")]);
+    scheduler.setReminders([active(7, ["10:30"])]);
     scheduler.start();
     now = new Date("2024-01-08T13:36:00.000Z");
     scheduler.handleVisibilityChange(true);
@@ -122,9 +166,9 @@ test("persistência evita duplicidade após recarga, sem misturar usuários", ()
     const values = new Map();
     const storage = { getItem: (key) => values.get(key), setItem: (key, value) => values.set(key, value) };
     const create = (userId) => new ReminderNotificationScheduler({ userId, notification: MockNotification, storage, onNavigate() {}, now: () => now, setIntervalFn: () => 1, clearIntervalFn() {} });
-    const first = create(12); first.setReminders([active(9, "10:30")]); first.start(); first.stop();
-    const reloaded = create(12); reloaded.setReminders([active(9, "10:30")]); reloaded.start(); reloaded.stop();
-    const otherUser = create(13); otherUser.setReminders([active(9, "10:30")]); otherUser.start(); otherUser.stop();
+    const first = create(12); first.setReminders([active(9, ["10:30"])]); first.start(); first.stop();
+    const reloaded = create(12); reloaded.setReminders([active(9, ["10:30"])]); reloaded.start(); reloaded.stop();
+    const otherUser = create(13); otherUser.setReminders([active(9, ["10:30"])]); otherUser.start(); otherUser.stop();
     assert.equal(instances.length, 2);
     assert.equal(values.size, 2);
 });
@@ -134,7 +178,7 @@ test("falha ao criar notificação não marca ocorrência como entregue e permit
     let attempts = 0;
     class FlakyNotification { constructor() { attempts += 1; if (attempts === 1) throw new Error("blocked"); } }
     const scheduler = new ReminderNotificationScheduler({ userId: 1, notification: FlakyNotification, storage: null, onNavigate() {}, now: () => now, setIntervalFn: () => 1, clearIntervalFn() {} });
-    scheduler.setReminders([active(9, "10:30")]); scheduler.start();
+    scheduler.setReminders([active(9, ["10:30"])]); scheduler.start();
     scheduler.check();
     assert.equal(attempts, 2);
     scheduler.stop();
@@ -154,7 +198,7 @@ test("carregamento requer token e consulta apenas o endpoint do usuário autenti
     const requests = [];
     const result = await fetchAuthenticatedReminders(async (url, options) => {
         requests.push({ url, options });
-        return { ok: true, async json() { return { reminders: [] }; } };
+        return { ok: true, async json() { return { reminders: [], timezone: "America/Sao_Paulo" }; } };
     }, "jwt-user-a");
     assert.deepEqual(result, []);
     assert.equal(requests[0].url, "/api/reminders");

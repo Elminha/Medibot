@@ -1,7 +1,16 @@
 import {
+    DEFAULT_REMINDER_TIME_ZONE,
     getNotificationAvailability,
     startReminderSchedulerIfAllowed
 } from "./reminderNotifications.js";
+import {
+    computeEndsOn,
+    countDaysInclusive,
+    generateEvenlySpacedTimes,
+    generateIntervalTimes,
+    MAX_TIMES_PER_REMINDER,
+    summarizeReminder
+} from "./reminderWizard.js";
 import {
     formatCountdown,
     getCountdownLevel,
@@ -229,7 +238,9 @@ async function authenticatedFetch(url, options = {}) {
 
     const headers = new Headers(options.headers || {});
     headers.set("Authorization", `Bearer ${token}`);
-    const response = await fetch(url, { ...options, headers });
+    // Dados do usuário autenticado nunca devem vir do cache HTTP do navegador (o
+    // servidor já manda Cache-Control: no-store, isto é defesa adicional do lado do cliente).
+    const response = await fetch(url, { ...options, headers, cache: "no-store" });
 
     if (response.status === 401) {
         showAuthentication();
@@ -303,8 +314,7 @@ function clearApplicationData() {
     currentTelegramLink = null;
     questionInput.value = "";
     medicationForm.reset();
-    reminderForm.reset();
-    reminderActiveInput.checked = true;
+    resetReminderWizard();
     currentMedications = [];
 }
 
@@ -323,19 +333,34 @@ function showApplication(user) {
     setView("chat");
     renderTelegramLinked(Boolean(user.telegramLinked));
     if (!user.telegramLinked) restoreTelegramCodeFromStorage();
-    const reminderLoad = loadReminders();
-    if (getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext }) === "enabled") {
+    const notificationAlreadyEnabled = getNotificationAvailability({
+        notification: window.Notification, isSecureContext: window.isSecureContext
+    }) === "enabled";
+    if (notificationAlreadyEnabled) {
         setNotificationState("pending", "Permissão concedida. Carregando seus lembretes para retomar as notificações…");
     } else {
         updateNotificationPermissionState();
     }
-    Promise.all([loadMedications(), reminderLoad, loadQueryHistory()]).then(([, reminders]) => {
-        if (Array.isArray(reminders)) {
-            initializeReminderScheduler(reminders);
-        } else if (getNotificationAvailability({ notification: window.Notification, isSecureContext: window.isSecureContext }) === "enabled") {
-            setNotificationState("disabled", "Não foi possível carregar seus lembretes. Verifique a conexão e tente ativar novamente.");
-        }
-    });
+
+    const reminderLoad = loadReminders();
+    // try/catch (não só .then) garante que o card de notificações nunca fique preso em
+    // "Aguarde…": qualquer falha, mesmo inesperada, cai no catch e devolve um estado
+    // clicável de novo (o próprio botão "Ativar notificações" funciona como "tentar de novo").
+    Promise.all([loadMedications(), reminderLoad, loadQueryHistory()])
+        .then(([, reminders]) => {
+            if (!notificationAlreadyEnabled) return;
+            if (Array.isArray(reminders)) {
+                initializeReminderScheduler(reminders);
+            } else {
+                setNotificationState("disabled", "Não foi possível carregar seus lembretes agora. Clique para tentar novamente.");
+            }
+        })
+        .catch((error) => {
+            console.error("Falha inesperada ao preparar a tela inicial:", error);
+            if (notificationAlreadyEnabled) {
+                setNotificationState("disabled", "Não foi possível carregar seus lembretes agora. Clique para tentar novamente.");
+            }
+        });
     window.clearInterval(reminderRefreshTimer);
     reminderRefreshTimer = window.setInterval(() => {
         refreshReminderNotifications();
@@ -506,21 +531,32 @@ const medicationInstructionsInput = document.querySelector("#medication-instruct
 const medicationFeedback = document.querySelector("#medication-feedback");
 const medicationList = document.querySelector("#medication-list");
 const addMedicationButton = document.querySelector("#add-medication-button");
-const reminderForm = document.querySelector("#reminder-form");
-const reminderMedicationInput = document.querySelector("#reminder-medication");
-const reminderTimeInput = document.querySelector("#reminder-time");
-const reminderFrequencyInput = document.querySelector("#reminder-frequency");
-const reminderActiveInput = document.querySelector("#reminder-active");
+const reminderWizardTitle = document.querySelector("#reminder-wizard-title");
+const reminderWizardForm = document.querySelector("#reminder-wizard-form");
+const wizardMedicationInput = document.querySelector("#wizard-medication");
+const wizardFrequencyOptions = document.querySelector("#wizard-frequency-options");
+const wizardChooseTimesButton = document.querySelector("#wizard-choose-times-button");
+const wizardTimeList = document.querySelector("#wizard-time-list");
+const wizardAddTimeButton = document.querySelector("#wizard-add-time-button");
+const wizardDayModeOptions = document.querySelector("#wizard-day-mode-options");
+const wizardWeekdayList = document.querySelector("#wizard-weekday-list");
+const wizardDurationModeOptions = document.querySelector("#wizard-duration-mode-options");
+const wizardDurationFields = document.querySelector("#wizard-duration-fields");
+const wizardDurationDaysInput = document.querySelector("#wizard-duration-days");
+const wizardStartsOnInput = document.querySelector("#wizard-starts-on");
+const wizardSummary = document.querySelector("#wizard-summary");
 const reminderFeedback = document.querySelector("#reminder-feedback");
 const reminderList = document.querySelector("#reminder-list");
-const addReminderButton = document.querySelector("#add-reminder-button");
-const frequencyLabels = {
-    daily: "Todos os dias",
-    weekly: "Semanalmente",
-    weekdays: "Dias úteis",
-    custom: "Personalizada"
-};
+const wizardSaveButton = document.querySelector("#wizard-save-button");
+const wizardCancelButton = document.querySelector("#wizard-cancel-button");
+const REMINDER_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 let currentMedications = [];
+let currentReminderTimezone = DEFAULT_REMINDER_TIME_ZONE;
+let editingReminderId = null;
+let wizardTimes = [];
+let wizardDayMode = "all";
+let wizardWeekdays = [];
+let wizardDurationMode = "forever";
 
 function setMedicationFeedback(message = "", type = "") {
     medicationFeedback.textContent = message;
@@ -778,7 +814,7 @@ function setReminderFeedback(message = "", type = "") {
 
 function setReminderLoading(isLoading) {
     reminderList.setAttribute("aria-busy", String(isLoading));
-    addReminderButton.disabled = isLoading || currentMedications.length === 0;
+    wizardSaveButton.disabled = isLoading || currentMedications.length === 0;
 }
 
 function reminderError(response, fallback) {
@@ -805,21 +841,17 @@ function populateMedicationSelect(select, selectedId) {
 }
 
 function populateReminderMedicationOptions() {
-    const selectedId = reminderMedicationInput.value;
-    populateMedicationSelect(reminderMedicationInput, selectedId);
-    addReminderButton.disabled = currentMedications.length === 0;
-}
-
-function reminderBody(medicationId, time, frequency, active) {
-    return { medicationId: Number(medicationId), time, frequency, active };
+    const selectedId = wizardMedicationInput.value;
+    populateMedicationSelect(wizardMedicationInput, selectedId);
+    wizardSaveButton.disabled = currentMedications.length === 0;
 }
 
 function reminderButton(text, className, onClick) {
     return medicationButton(text, className, onClick);
 }
 
-function frequencyLabel(frequency) {
-    return frequencyLabels[frequency] || frequency;
+function statusLabel(status) {
+    return status === "ended" ? "Encerrado" : status === "paused" ? "Pausado" : "Ativo";
 }
 
 function renderReminderCard(reminder) {
@@ -831,106 +863,23 @@ function renderReminderCard(reminder) {
     name.className = "reminder-medication-name";
     name.textContent = reminder.medicationName;
     const status = document.createElement("span");
-    status.className = `reminder-status${reminder.active ? "" : " inactive"}`;
-    status.textContent = reminder.active ? "Ativo" : "Inativo";
+    status.className = `reminder-status${reminder.status === "active" ? "" : ` ${reminder.status}`}`;
+    status.textContent = statusLabel(reminder.status);
     header.append(name, status);
 
-    const meta = document.createElement("div");
-    meta.className = "reminder-meta";
-    const timeBadge = document.createElement("span");
-    timeBadge.className = "reminder-time-badge";
-    timeBadge.textContent = reminder.time;
-    const frequency = document.createElement("span");
-    frequency.className = "reminder-frequency-label";
-    frequency.textContent = frequencyLabel(reminder.frequency);
-    meta.append(timeBadge, frequency);
+    const summary = document.createElement("p");
+    summary.className = "reminder-frequency-label";
+    summary.textContent = summarizeReminder(reminder);
 
     const actions = document.createElement("div");
     actions.className = "reminder-actions";
     actions.append(
-        reminderButton("Editar", "secondary-button", () => showReminderEditor(card, reminder)),
-        reminderButton(reminder.active ? "Desativar" : "Ativar", "secondary-button", () => setReminderActive(reminder, !reminder.active)),
+        reminderButton("Editar", "secondary-button", () => fillWizardForEdit(reminder)),
+        reminderButton(reminder.active ? "Pausar" : "Ativar", "secondary-button", () => setReminderActive(reminder, !reminder.active)),
         reminderButton("Excluir", "danger-button", () => deleteReminder(reminder.id, reminder.medicationName))
     );
-    card.append(header, meta, actions);
+    card.append(header, summary, actions);
     return card;
-}
-
-function showReminderEditor(card, reminder) {
-    if (card.querySelector(".reminder-edit-form")) return;
-
-    const form = document.createElement("form");
-    form.className = "reminder-edit-form";
-    const fields = document.createElement("div");
-    fields.className = "reminder-edit-fields";
-
-    const medicationLabel = document.createElement("label");
-    medicationLabel.textContent = "Medicamento";
-    const medicationInput = document.createElement("select");
-    populateMedicationSelect(medicationInput, reminder.medicationId);
-    medicationLabel.append(medicationInput);
-
-    const timeLabel = document.createElement("label");
-    timeLabel.textContent = "Horário";
-    const timeInput = document.createElement("input");
-    timeInput.type = "time";
-    timeInput.value = reminder.time;
-    timeInput.required = true;
-    timeLabel.append(timeInput);
-
-    const frequencyLabelElement = document.createElement("label");
-    frequencyLabelElement.textContent = "Frequência";
-    const frequencyInput = document.createElement("select");
-    Object.entries(frequencyLabels).forEach(([value, label]) => {
-        const option = document.createElement("option");
-        option.value = value;
-        option.textContent = label;
-        option.selected = value === reminder.frequency;
-        frequencyInput.append(option);
-    });
-    frequencyLabelElement.append(frequencyInput);
-
-    const activeLabel = document.createElement("label");
-    activeLabel.className = "active-field";
-    const activeInput = document.createElement("input");
-    activeInput.type = "checkbox";
-    activeInput.checked = reminder.active;
-    activeLabel.append(activeInput, document.createTextNode(" Lembrete ativo"));
-    fields.append(medicationLabel, timeLabel, frequencyLabelElement, activeLabel);
-
-    const actions = document.createElement("div");
-    actions.className = "edit-actions";
-    const saveButton = reminderButton("Salvar alterações", "primary-button", () => {});
-    saveButton.type = "submit";
-    actions.append(saveButton, reminderButton("Cancelar", "secondary-button", () => form.remove()));
-    form.append(fields, actions);
-
-    form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        if (!medicationInput.value || !timeInput.value) {
-            setReminderFeedback("Informe o medicamento e o horário para salvar as alterações.", "error");
-            return;
-        }
-        saveButton.disabled = true;
-        setReminderFeedback("");
-        try {
-            const response = await authenticatedFetch(`/api/reminders/${reminder.id}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(reminderBody(medicationInput.value, timeInput.value, frequencyInput.value, activeInput.checked))
-            });
-            if (!response.ok) throw new Error(await reminderError(response, "Não foi possível atualizar o lembrete."));
-            setReminderFeedback("Lembrete atualizado com sucesso.", "success");
-            await loadReminders();
-        } catch (error) {
-            setReminderFeedback(error instanceof Error ? error.message : "Não foi possível atualizar o lembrete.", "error");
-        } finally {
-            saveButton.disabled = false;
-        }
-    });
-
-    card.append(form);
-    medicationInput.focus();
 }
 
 function renderReminders(reminders) {
@@ -943,7 +892,7 @@ function renderReminders(reminders) {
                 : "Cadastre um medicamento para criar lembretes.",
             currentMedications.length ? "Adicionar lembrete" : "Ir para Medicamentos",
             currentMedications.length
-                ? () => reminderMedicationInput.focus()
+                ? () => wizardMedicationInput.focus()
                 : () => setView("medications")
         );
         empty.className = "reminder-state";
@@ -953,6 +902,27 @@ function renderReminders(reminders) {
     reminders.forEach((reminder) => reminderList.append(renderReminderCard(reminder)));
 }
 
+const REMINDERS_FETCH_TIMEOUT_MS = 15_000;
+
+async function fetchRemindersOnce() {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), REMINDERS_FETCH_TIMEOUT_MS);
+    try {
+        const response = await authenticatedFetch("/api/reminders", { signal: controller.signal });
+        if (!response.ok) throw new Error(await reminderError(response, "Não foi possível carregar os lembretes."));
+        const data = await response.json();
+        if (!data || !Array.isArray(data.reminders)) throw new Error("Resposta inesperada ao carregar lembretes.");
+        return data;
+    } finally {
+        window.clearTimeout(timeout);
+    }
+}
+
+/**
+ * Nunca deixa o estado de carregamento preso: uma tentativa, mais uma repetição
+ * automática antes de mostrar erro com "Tentar novamente" — e uma lista vazia de
+ * verdade (0 lembretes, requisição ok) é sempre o estado vazio normal, nunca um erro.
+ */
 async function loadReminders() {
     setReminderLoading(true);
     reminderList.replaceChildren();
@@ -960,21 +930,28 @@ async function loadReminders() {
     loading.className = "reminder-state";
     loading.textContent = "Carregando lembretes...";
     reminderList.append(loading);
+
     try {
-        const response = await authenticatedFetch("/api/reminders");
-        if (!response.ok) throw new Error(await reminderError(response, "Não foi possível carregar os lembretes."));
-        const data = await response.json();
-        if (!data || !Array.isArray(data.reminders)) throw new Error("Resposta inesperada ao carregar lembretes.");
+        let data;
+        try {
+            data = await fetchRemindersOnce();
+        } catch (firstError) {
+            console.error("Falha ao carregar lembretes (tentando de novo):", firstError);
+            data = await fetchRemindersOnce();
+        }
+
         renderReminders(data.reminders);
+        currentReminderTimezone = data.timezone || DEFAULT_REMINDER_TIME_ZONE;
         notificationScheduler?.setReminders(data.reminders);
-        document.querySelector("#frequency-gap").hidden = !data.reminders.some((reminder) => reminder.active && ["weekly", "custom"].includes(reminder.frequency));
         return data.reminders;
     } catch (error) {
+        console.error("Falha ao carregar lembretes:", error);
         reminderList.replaceChildren();
         notificationScheduler?.setReminders([]);
         const message = document.createElement("p");
         message.className = "reminder-state feedback-error";
-        message.textContent = error instanceof Error ? error.message : "Não foi possível carregar os lembretes.";
+        message.textContent = "Não foi possível carregar seus lembretes agora.";
+        message.append(document.createElement("br"), reminderButton("Tentar novamente", "secondary-button", () => loadReminders()));
         reminderList.append(message);
         setReminderFeedback("Verifique sua conexão e tente novamente.", "error");
         return false;
@@ -1032,10 +1009,11 @@ async function enableReminderNotifications() {
         const reminders = await loadReminders();
         if (!Array.isArray(reminders)) throw new Error("reminders-load-failed");
         initializeReminderScheduler(reminders);
-    } catch {
+    } catch (error) {
+        console.error("Falha ao ativar notificações de lembretes:", error);
         notificationScheduler?.stop();
         notificationScheduler = null;
-        setNotificationState("disabled", "Não foi possível carregar seus lembretes. Verifique a conexão e tente ativar novamente.");
+        setNotificationState("disabled", "Não foi possível carregar seus lembretes agora. Clique para tentar novamente.");
     }
 }
 
@@ -1046,10 +1024,16 @@ function initializeReminderScheduler(reminders) {
         updateNotificationPermissionState();
         return null;
     }
-    if (!Number.isSafeInteger(currentAuthUserId) || currentAuthUserId <= 0) return null;
+    // Estas duas saídas antes existiam sem atualizar o card: ficava preso no texto
+    // "pending" (Aguarde…) para sempre, sem erro nenhum. Agora sempre resolvem o estado.
+    if (!Number.isSafeInteger(currentAuthUserId) || currentAuthUserId <= 0) {
+        setNotificationState("disabled", "Não foi possível identificar sua conta agora. Clique para tentar novamente.");
+        return null;
+    }
     notificationScheduler = startReminderSchedulerIfAllowed({
         scheduler: notificationScheduler,
         userId: currentAuthUserId,
+        timezone: currentReminderTimezone,
         notification: window.Notification,
         isSecureContext: window.isSecureContext,
         storage: window.localStorage,
@@ -1058,6 +1042,8 @@ function initializeReminderScheduler(reminders) {
     });
     if (notificationScheduler) {
         setNotificationState("enabled", "Notificações ativadas. O navegador precisa manter esta página ativa para verificar os horários.");
+    } else {
+        setNotificationState("disabled", "Não foi possível ativar as notificações agora. Clique para tentar novamente.");
     }
     return notificationScheduler;
 }
@@ -1130,7 +1116,7 @@ async function setReminderActive(reminder, active) {
             body: JSON.stringify({ active })
         });
         if (!response.ok) throw new Error(await reminderError(response, "Não foi possível atualizar o lembrete."));
-        setReminderFeedback(`Lembrete ${active ? "ativado" : "desativado"} com sucesso.`, "success");
+        setReminderFeedback(`Lembrete ${active ? "ativado" : "pausado"} com sucesso.`, "success");
         await loadReminders();
     } catch (error) {
         setReminderFeedback(error instanceof Error ? error.message : "Não foi possível atualizar o lembrete.", "error");
@@ -1144,44 +1130,266 @@ async function deleteReminder(id, medicationName) {
         const response = await authenticatedFetch(`/api/reminders/${id}`, { method: "DELETE" });
         if (!response.ok) throw new Error(await reminderError(response, "Não foi possível excluir o lembrete."));
         setReminderFeedback("Lembrete excluído com sucesso.", "success");
+        if (editingReminderId === id) resetReminderWizard();
         await loadReminders();
     } catch (error) {
         setReminderFeedback(error instanceof Error ? error.message : "Não foi possível excluir o lembrete.", "error");
     }
 }
 
-reminderForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const medicationId = reminderMedicationInput.value;
-    const time = reminderTimeInput.value;
-    reminderMedicationInput.classList.toggle("input-error", !medicationId);
-    reminderTimeInput.classList.toggle("input-error", !time);
-    if (!medicationId || !time) {
-        setReminderFeedback("Informe o medicamento e o horário para adicionar o lembrete.", "error");
+// ===== Assistente de criação/edição de lembretes (mesmo formulário para os dois) =====
+
+function todayLocalDateInput() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function defaultFirstTime() {
+    const now = new Date();
+    const roundedMinutes = Math.round(now.getMinutes() / 5) * 5;
+    const hour = (now.getHours() + (roundedMinutes >= 60 ? 1 : 0)) % 24;
+    return `${String(hour).padStart(2, "0")}:${String(roundedMinutes % 60).padStart(2, "0")}`;
+}
+
+function setWizardChipGroupPressed(group, predicate) {
+    group.querySelectorAll(".wizard-chip").forEach((chip) => {
+        chip.setAttribute("aria-pressed", String(predicate(chip)));
+    });
+}
+
+function renderWizardTimeList() {
+    wizardTimeList.replaceChildren();
+    wizardTimes.forEach((time, index) => {
+        const row = document.createElement("div");
+        row.className = "wizard-time-row";
+        const input = document.createElement("input");
+        input.type = "time";
+        input.value = time;
+        input.required = true;
+        input.addEventListener("input", () => {
+            wizardTimes[index] = input.value;
+            updateWizardSummary();
+        });
+        row.append(input);
+        if (wizardTimes.length > 1) {
+            const removeButton = document.createElement("button");
+            removeButton.type = "button";
+            removeButton.className = "icon-button";
+            removeButton.setAttribute("aria-label", "Remover este horário");
+            removeButton.textContent = "✕";
+            removeButton.addEventListener("click", () => {
+                wizardTimes.splice(index, 1);
+                setWizardChipGroupPressed(wizardFrequencyOptions, (candidate) => candidate === wizardChooseTimesButton);
+                renderWizardTimeList();
+                updateWizardSummary();
+            });
+            row.append(removeButton);
+        }
+        wizardTimeList.append(row);
+    });
+}
+
+function updateWizardSummary() {
+    const medicationOption = wizardMedicationInput.selectedOptions[0];
+    const medicationName = medicationOption?.value ? medicationOption.textContent : "Selecione um medicamento";
+    const validTimes = wizardTimes.filter((time) => REMINDER_TIME_PATTERN.test(time));
+    const weekdays = wizardDayMode === "custom" ? wizardWeekdays : [];
+    const endsOn = wizardDurationMode === "days"
+        ? computeEndsOn(wizardStartsOnInput.value || todayLocalDateInput(), Number(wizardDurationDaysInput.value))
+        : null;
+    wizardSummary.textContent = summarizeReminder({ medicationName, times: validTimes, weekdays, endsOn, status: "active" });
+}
+
+function resetReminderWizard() {
+    editingReminderId = null;
+    wizardTimes = [];
+    wizardDayMode = "all";
+    wizardWeekdays = [];
+    wizardDurationMode = "forever";
+    reminderWizardForm.reset();
+    wizardMedicationInput.value = "";
+    populateReminderMedicationOptions();
+    renderWizardTimeList();
+    setWizardChipGroupPressed(wizardFrequencyOptions, () => false);
+    setWizardChipGroupPressed(wizardDayModeOptions, (chip) => chip.dataset.dayMode === "all");
+    wizardWeekdayList.hidden = true;
+    wizardWeekdayList.querySelectorAll(".wizard-weekday").forEach((chip) => chip.setAttribute("aria-pressed", "false"));
+    setWizardChipGroupPressed(wizardDurationModeOptions, (chip) => chip.dataset.durationMode === "forever");
+    wizardDurationFields.hidden = true;
+    wizardStartsOnInput.value = todayLocalDateInput();
+    wizardDurationDaysInput.value = "";
+    reminderWizardTitle.textContent = "Novo lembrete";
+    wizardSaveButton.textContent = "Salvar lembrete";
+    wizardCancelButton.hidden = true;
+    setReminderFeedback("");
+    updateWizardSummary();
+}
+
+function fillWizardForEdit(reminder) {
+    editingReminderId = reminder.id;
+    wizardTimes = reminder.times.length ? [...reminder.times] : [""];
+    wizardDayMode = reminder.weekdays.length ? "custom" : "all";
+    wizardWeekdays = [...reminder.weekdays];
+    wizardDurationMode = reminder.endsOn ? "days" : "forever";
+
+    wizardMedicationInput.value = String(reminder.medicationId);
+    renderWizardTimeList();
+    setWizardChipGroupPressed(wizardFrequencyOptions, (chip) => chip === wizardChooseTimesButton);
+    setWizardChipGroupPressed(wizardDayModeOptions, (chip) => chip.dataset.dayMode === wizardDayMode);
+    wizardWeekdayList.hidden = wizardDayMode !== "custom";
+    wizardWeekdayList.querySelectorAll(".wizard-weekday").forEach((chip) => {
+        chip.setAttribute("aria-pressed", String(wizardWeekdays.includes(Number(chip.dataset.weekday))));
+    });
+    setWizardChipGroupPressed(wizardDurationModeOptions, (chip) => chip.dataset.durationMode === wizardDurationMode);
+    wizardDurationFields.hidden = wizardDurationMode !== "days";
+    wizardStartsOnInput.value = reminder.startsOn;
+    wizardDurationDaysInput.value = reminder.endsOn
+        ? String(countDaysInclusive(reminder.startsOn, reminder.endsOn) || "")
+        : "";
+
+    reminderWizardTitle.textContent = "Editar lembrete";
+    wizardSaveButton.textContent = "Salvar alterações";
+    wizardCancelButton.hidden = false;
+    setReminderFeedback("");
+    updateWizardSummary();
+    reminderWizardForm.scrollIntoView({ behavior: "smooth", block: "start" });
+    wizardMedicationInput.focus();
+}
+
+wizardCancelButton.addEventListener("click", () => resetReminderWizard());
+wizardMedicationInput.addEventListener("change", updateWizardSummary);
+
+wizardFrequencyOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+        const firstTime = wizardTimes.find((time) => REMINDER_TIME_PATTERN.test(time)) || defaultFirstTime();
+        if (chip.dataset.count) {
+            wizardTimes = generateEvenlySpacedTimes(firstTime, Number(chip.dataset.count));
+        } else if (chip.dataset.interval) {
+            wizardTimes = generateIntervalTimes(firstTime, Number(chip.dataset.interval));
+        } else {
+            // "Escolher os horários": mantém o que já existe (ou abre um horário em branco).
+            if (!wizardTimes.length) wizardTimes = [""];
+        }
+        renderWizardTimeList();
+        setWizardChipGroupPressed(wizardFrequencyOptions, (candidate) => candidate === chip);
+        updateWizardSummary();
+    });
+});
+
+wizardAddTimeButton.addEventListener("click", () => {
+    if (wizardTimes.length >= MAX_TIMES_PER_REMINDER) {
+        setReminderFeedback(`Você pode adicionar no máximo ${MAX_TIMES_PER_REMINDER} horários por lembrete.`, "error");
         return;
+    }
+    setWizardChipGroupPressed(wizardFrequencyOptions, (candidate) => candidate === wizardChooseTimesButton);
+    wizardTimes.push("");
+    renderWizardTimeList();
+    updateWizardSummary();
+});
+
+wizardDayModeOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+        wizardDayMode = chip.dataset.dayMode;
+        wizardWeekdayList.hidden = wizardDayMode !== "custom";
+        setWizardChipGroupPressed(wizardDayModeOptions, (candidate) => candidate === chip);
+        updateWizardSummary();
+    });
+});
+
+wizardWeekdayList.querySelectorAll(".wizard-weekday").forEach((chip) => {
+    chip.addEventListener("click", () => {
+        const weekday = Number(chip.dataset.weekday);
+        const pressed = chip.getAttribute("aria-pressed") === "true";
+        chip.setAttribute("aria-pressed", String(!pressed));
+        wizardWeekdays = pressed
+            ? wizardWeekdays.filter((day) => day !== weekday)
+            : [...wizardWeekdays, weekday];
+        updateWizardSummary();
+    });
+});
+
+wizardDurationModeOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+        wizardDurationMode = chip.dataset.durationMode;
+        wizardDurationFields.hidden = wizardDurationMode !== "days";
+        if (wizardDurationMode === "days" && !wizardStartsOnInput.value) {
+            wizardStartsOnInput.value = todayLocalDateInput();
+        }
+        setWizardChipGroupPressed(wizardDurationModeOptions, (candidate) => candidate === chip);
+        updateWizardSummary();
+    });
+});
+
+wizardDurationDaysInput.addEventListener("input", updateWizardSummary);
+wizardStartsOnInput.addEventListener("input", updateWizardSummary);
+
+reminderWizardForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const medicationId = wizardMedicationInput.value;
+    const times = wizardTimes.filter((time) => REMINDER_TIME_PATTERN.test(time));
+    const uniqueTimes = new Set(times);
+    const weekdays = wizardDayMode === "custom" ? wizardWeekdays : [];
+
+    wizardMedicationInput.classList.toggle("input-error", !medicationId);
+    if (!medicationId) {
+        setReminderFeedback("Selecione o medicamento deste lembrete.", "error");
+        return;
+    }
+    if (!times.length || times.length !== wizardTimes.length) {
+        setReminderFeedback("Preencha todos os horários (ou remova os que ficaram em branco).", "error");
+        return;
+    }
+    if (uniqueTimes.size !== times.length) {
+        setReminderFeedback("Os horários não podem se repetir.", "error");
+        return;
+    }
+
+    const payload = { medicationId: Number(medicationId), times, weekdays, active: true };
+    if (wizardDurationMode === "days") {
+        const startsOn = wizardStartsOnInput.value || todayLocalDateInput();
+        const totalDays = Number(wizardDurationDaysInput.value);
+        const endsOn = computeEndsOn(startsOn, totalDays);
+        if (!endsOn) {
+            setReminderFeedback("Informe por quantos dias o lembrete deve continuar (1 ou mais).", "error");
+            return;
+        }
+        payload.startsOn = startsOn;
+        payload.endsOn = endsOn;
+    } else {
+        payload.endsOn = null;
+    }
+    if (editingReminderId !== null) {
+        delete payload.active;
     }
 
     setReminderLoading(true);
     setReminderFeedback("");
     try {
-        const response = await authenticatedFetch("/api/reminders", {
-            method: "POST",
+        const url = editingReminderId === null ? "/api/reminders" : `/api/reminders/${editingReminderId}`;
+        const response = await authenticatedFetch(url, {
+            method: editingReminderId === null ? "POST" : "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(reminderBody(medicationId, time, reminderFrequencyInput.value, reminderActiveInput.checked))
+            body: JSON.stringify(payload)
         });
-        if (!response.ok) throw new Error(await reminderError(response, "Não foi possível adicionar o lembrete."));
-        reminderForm.reset();
-        reminderActiveInput.checked = true;
-        setReminderFeedback("Lembrete adicionado com sucesso.", "success");
-        track("reminder_created");
+        if (!response.ok) {
+            throw new Error(await reminderError(response, editingReminderId === null
+                ? "Não foi possível adicionar o lembrete."
+                : "Não foi possível atualizar o lembrete."));
+        }
+        const wasEditing = editingReminderId !== null;
+        resetReminderWizard();
+        setReminderFeedback(wasEditing ? "Lembrete atualizado com sucesso." : "Lembrete adicionado com sucesso.", "success");
+        if (!wasEditing) track("reminder_created");
         await loadReminders();
-        reminderMedicationInput.focus();
     } catch (error) {
-        setReminderFeedback(error instanceof Error ? error.message : "Não foi possível adicionar o lembrete.", "error");
+        setReminderFeedback(error instanceof Error ? error.message : "Não foi possível salvar o lembrete.", "error");
     } finally {
         setReminderLoading(false);
     }
 });
+
+resetReminderWizard();
 
 const telegramStatus = document.querySelector("#telegram-status");
 const telegramCodeBox = document.querySelector("#telegram-code-box");

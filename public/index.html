@@ -243,37 +243,93 @@
                     <button type="button" class="danger-button" id="telegram-disconnect-button" hidden>Desvincular</button>
                 </div>
             </section>
-            <p class="frequency-gap" id="frequency-gap" hidden>Os lembretes semanais e personalizados não serão notificados: ainda não há dias programados definidos para essas frequências.</p>
 
-            <form class="reminder-form" id="reminder-form" novalidate>
-                <div class="reminder-fields">
-                    <label>
-                        Medicamento
-                        <select id="reminder-medication" name="medicationId" required disabled>
-                            <option value="">Carregando medicamentos...</option>
-                        </select>
-                    </label>
-                    <label>
-                        Horário
-                        <input id="reminder-time" name="time" type="time" required />
-                    </label>
-                    <label>
-                        Frequência
-                        <select id="reminder-frequency" name="frequency" required>
-                            <option value="daily">Todos os dias</option>
-                            <option value="weekly">Semanalmente</option>
-                            <option value="weekdays">Dias úteis</option>
-                            <option value="custom">Personalizada</option>
-                        </select>
-                    </label>
-                    <label class="active-field reminder-active-field">
-                        <input id="reminder-active" name="active" type="checkbox" checked />
-                        Lembrete ativo
-                    </label>
+            <div class="reminder-wizard" id="reminder-wizard">
+                <div class="section-heading reminder-wizard-heading">
+                    <h3 id="reminder-wizard-title">Novo lembrete</h3>
+                    <button type="button" class="secondary-button" id="wizard-cancel-button" hidden>Cancelar edição</button>
                 </div>
-                <button class="primary-button" id="add-reminder-button" type="submit" disabled>Adicionar lembrete</button>
-            </form>
-            <p class="reminder-feedback" id="reminder-feedback" role="status" aria-live="polite"></p>
+
+                <form class="reminder-wizard-form" id="reminder-wizard-form" novalidate>
+                    <section class="wizard-step">
+                        <label>
+                            Medicamento
+                            <select id="wizard-medication" name="medicationId" required disabled>
+                                <option value="">Carregando medicamentos...</option>
+                            </select>
+                        </label>
+                    </section>
+
+                    <section class="wizard-step">
+                        <p class="wizard-step-label" id="wizard-frequency-label">Quantas vezes por dia?</p>
+                        <div class="wizard-chip-group" id="wizard-frequency-options" role="group" aria-labelledby="wizard-frequency-label">
+                            <button type="button" class="wizard-chip" data-count="1" aria-pressed="false">1x</button>
+                            <button type="button" class="wizard-chip" data-count="2" aria-pressed="false">2x</button>
+                            <button type="button" class="wizard-chip" data-count="3" aria-pressed="false">3x</button>
+                            <button type="button" class="wizard-chip" data-count="4" aria-pressed="false">4x</button>
+                            <button type="button" class="wizard-chip" data-interval="6" aria-pressed="false">De 6 em 6 horas</button>
+                            <button type="button" class="wizard-chip" data-interval="8" aria-pressed="false">De 8 em 8 horas</button>
+                            <button type="button" class="wizard-chip" data-interval="12" aria-pressed="false">De 12 em 12 horas</button>
+                            <button type="button" class="wizard-chip" id="wizard-choose-times-button" aria-pressed="false">Escolher os horários</button>
+                        </div>
+                    </section>
+
+                    <section class="wizard-step">
+                        <p class="wizard-step-label" id="wizard-times-label">Horários</p>
+                        <div class="wizard-time-list" id="wizard-time-list" aria-labelledby="wizard-times-label"></div>
+                        <button type="button" class="secondary-button" id="wizard-add-time-button">Adicionar horário</button>
+                    </section>
+
+                    <section class="wizard-step">
+                        <p class="wizard-step-label" id="wizard-days-label">Quais dias?</p>
+                        <div class="wizard-chip-group" id="wizard-day-mode-options" role="group" aria-labelledby="wizard-days-label">
+                            <button type="button" class="wizard-chip" data-day-mode="all" aria-pressed="true">Todos os dias</button>
+                            <button type="button" class="wizard-chip" data-day-mode="custom" aria-pressed="false">Dias específicos</button>
+                        </div>
+                        <div class="wizard-weekday-list" id="wizard-weekday-list" role="group" aria-label="Dias da semana" hidden>
+                            <button type="button" class="wizard-chip wizard-weekday" data-weekday="1" aria-pressed="false">Seg</button>
+                            <button type="button" class="wizard-chip wizard-weekday" data-weekday="2" aria-pressed="false">Ter</button>
+                            <button type="button" class="wizard-chip wizard-weekday" data-weekday="3" aria-pressed="false">Qua</button>
+                            <button type="button" class="wizard-chip wizard-weekday" data-weekday="4" aria-pressed="false">Qui</button>
+                            <button type="button" class="wizard-chip wizard-weekday" data-weekday="5" aria-pressed="false">Sex</button>
+                            <button type="button" class="wizard-chip wizard-weekday" data-weekday="6" aria-pressed="false">Sáb</button>
+                            <button type="button" class="wizard-chip wizard-weekday" data-weekday="0" aria-pressed="false">Dom</button>
+                        </div>
+                    </section>
+
+                    <section class="wizard-step">
+                        <p class="wizard-step-label" id="wizard-duration-label">Por quanto tempo?</p>
+                        <div class="wizard-chip-group" id="wizard-duration-mode-options" role="group" aria-labelledby="wizard-duration-label">
+                            <button type="button" class="wizard-chip" data-duration-mode="forever" aria-pressed="true">Continuar sempre</button>
+                            <button type="button" class="wizard-chip" data-duration-mode="days" aria-pressed="false">Por X dias</button>
+                        </div>
+                        <div class="wizard-duration-fields" id="wizard-duration-fields" hidden>
+                            <label>
+                                Quantos dias?
+                                <input type="number" id="wizard-duration-days" min="1" max="3650" step="1" />
+                            </label>
+                            <label>
+                                Data de início
+                                <input type="date" id="wizard-starts-on" />
+                            </label>
+                        </div>
+                    </section>
+
+                    <section class="wizard-step">
+                        <p class="wizard-step-label" id="wizard-channels-label">Onde avisar?</p>
+                        <div class="wizard-chip-group" id="wizard-channel-options" role="group" aria-labelledby="wizard-channels-label">
+                            <button type="button" class="wizard-chip" data-channel="browser" aria-pressed="true">Navegador</button>
+                            <button type="button" class="wizard-chip" disabled title="Em breve">Telegram <span class="wizard-soon">em breve</span></button>
+                            <button type="button" class="wizard-chip" disabled title="Em breve">E-mail <span class="wizard-soon">em breve</span></button>
+                        </div>
+                    </section>
+
+                    <p class="wizard-summary" id="wizard-summary" aria-live="polite"></p>
+                    <p class="reminder-feedback" id="reminder-feedback" role="status" aria-live="polite"></p>
+
+                    <button class="primary-button" id="wizard-save-button" type="submit" disabled>Salvar lembrete</button>
+                </form>
+            </div>
 
             <div class="reminder-list" id="reminder-list" aria-live="polite" aria-busy="true">
                 <p class="reminder-state">Carregando lembretes...</p>

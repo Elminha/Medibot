@@ -127,19 +127,19 @@ textarea { resize: vertical; }
 .icon-button svg { width: 19px; height: 19px; }
 
 /* ===== Switch (checkbox) ===== */
-.active-field, .reminder-active-field { display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--text); font-size: .82rem; font-weight: 650; }
-.active-field input[type="checkbox"], .reminder-active-field input[type="checkbox"] {
+.active-field { display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--text); font-size: .82rem; font-weight: 650; }
+.active-field input[type="checkbox"] {
     appearance: none; -webkit-appearance: none; width: 40px; height: 24px; flex: none; order: 1;
     border-radius: var(--radius-pill); background: var(--border); position: relative; cursor: pointer; width: 40px;
     transition: background var(--transition);
 }
-.active-field input[type="checkbox"]::after, .reminder-active-field input[type="checkbox"]::after {
+.active-field input[type="checkbox"]::after {
     content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%;
     background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform var(--transition);
 }
-.active-field input[type="checkbox"]:checked, .reminder-active-field input[type="checkbox"]:checked { background: var(--primary); }
-.active-field input[type="checkbox"]:checked::after, .reminder-active-field input[type="checkbox"]:checked::after { transform: translateX(16px); }
-.active-field input[type="checkbox"]:focus-visible, .reminder-active-field input[type="checkbox"]:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.active-field input[type="checkbox"]:checked { background: var(--primary); }
+.active-field input[type="checkbox"]:checked::after { transform: translateX(16px); }
+.active-field input[type="checkbox"]:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 
@@ -272,16 +272,14 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .section-heading p { margin: 4px 0 20px; color: var(--text-muted); font-size: .9rem; }
 
 /* ===== Medication / reminder forms ===== */
-.medication-form, .reminder-form {
+.medication-form {
     display: flex; align-items: flex-end; gap: var(--space-4); flex-wrap: wrap;
     border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-2); padding: var(--space-4);
 }
 .medication-fields { display: grid; flex: 1; grid-template-columns: minmax(160px, 1fr) minmax(130px, .7fr); gap: var(--space-3); }
-.reminder-fields { display: grid; flex: 1; grid-template-columns: minmax(180px, 1fr) minmax(120px, .55fr) minmax(150px, .75fr); gap: var(--space-3); }
-.medication-fields label, .reminder-fields label, .edit-fields label, .reminder-edit-fields label { display: flex; flex-direction: column; gap: 5px; color: var(--text); font-size: .82rem; font-weight: 650; }
-.medication-fields span, .reminder-fields span, .edit-fields span, .reminder-edit-fields span { color: var(--text-muted); font-weight: 400; }
+.medication-fields label, .edit-fields label { display: flex; flex-direction: column; gap: 5px; color: var(--text); font-size: .82rem; font-weight: 650; }
+.medication-fields span, .edit-fields span { color: var(--text-muted); font-weight: 400; }
 .medication-instructions { grid-column: 1 / -1; }
-.reminder-active-field { align-self: end; padding-bottom: 10px; }
 
 .medication-feedback, .reminder-feedback { min-height: 1.3em; margin: 12px 0 0; font-size: .86rem; }
 .feedback-error { color: var(--danger); }
@@ -304,7 +302,8 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .medication-card-header, .reminder-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .medication-name, .reminder-medication-name { margin: 0; color: var(--text); font-size: 1.02rem; font-weight: 700; }
 .medication-status, .reminder-status { display: inline-flex; flex: none; border-radius: var(--radius-pill); background: var(--primary-soft-strong); color: var(--primary); padding: 3px 10px; font-size: .74rem; font-weight: 700; }
-.medication-status.inactive, .reminder-status.inactive { background: var(--surface-2); color: var(--text-muted); }
+.medication-status.inactive, .reminder-status.inactive, .reminder-status.paused { background: var(--surface-2); color: var(--text-muted); }
+.reminder-status.ended { background: var(--danger-soft); color: var(--danger); }
 .medication-meta, .reminder-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
 .medication-dose-pill { display: inline-flex; align-items: center; gap: 6px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text); padding: 4px 11px; font-size: .8rem; font-weight: 600; }
 .reminder-time-badge { display: inline-flex; align-items: center; border-radius: var(--radius-sm); background: var(--primary-soft); color: var(--primary); padding: 4px 11px; font-size: .95rem; font-weight: 750; letter-spacing: .02em; }
@@ -313,10 +312,10 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .medication-actions, .reminder-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .medication-actions button, .reminder-actions button { min-height: 34px; }
 
-.edit-form, .reminder-edit-form { margin-top: 14px; border-top: 1px solid var(--border-soft); padding-top: 14px; }
-.edit-fields, .reminder-edit-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.edit-form { margin-top: 14px; border-top: 1px solid var(--border-soft); padding-top: 14px; }
+.edit-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .edit-fields .edit-instructions { grid-column: 1 / -1; }
-.edit-fields .active-field, .reminder-edit-fields .active-field { grid-column: 1 / -1; }
+.edit-fields .active-field { grid-column: 1 / -1; }
 .edit-actions { display: flex; gap: 8px; margin-top: 14px; }
 
 /* ===== History ===== */
@@ -357,7 +356,42 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 #notification-toggle:disabled { cursor: wait; }
 #notification-status[data-state="enabled"] { color: var(--primary); }
 #notification-status[data-state="blocked"] { color: var(--danger); }
-.frequency-gap { margin: 0 0 14px; padding: 11px 13px; border: 1px solid var(--warning-border); border-radius: var(--radius-sm); background: var(--warning-soft); color: var(--warning-text); font-size: .83rem; line-height: 1.45; }
+#notification-status[data-state="pending"] { color: var(--text-muted); }
+
+/* ===== Reminder wizard (criar/editar, reaproveitado para os dois) ===== */
+.reminder-wizard { margin-bottom: 16px; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-2); padding: var(--space-4); }
+.reminder-wizard-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.reminder-wizard-heading h3 { margin: 0; color: var(--text); font-size: 1rem; }
+.reminder-wizard-form { display: flex; flex-direction: column; gap: var(--space-4); }
+.wizard-step { display: flex; flex-direction: column; gap: 8px; }
+.wizard-step label { display: flex; flex-direction: column; gap: 5px; max-width: 320px; color: var(--text); font-size: .82rem; font-weight: 650; }
+.wizard-step-label { margin: 0; color: var(--text); font-size: .86rem; font-weight: 650; }
+
+.wizard-chip-group { display: flex; flex-wrap: wrap; gap: 8px; }
+.wizard-chip {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 14px;
+    border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface);
+    color: var(--text); font-size: .84rem; font-weight: 600; cursor: pointer;
+    transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+.wizard-chip:hover { border-color: var(--primary); background: var(--primary-soft); }
+.wizard-chip[aria-pressed="true"] { border-color: var(--primary); background: var(--primary); color: var(--on-primary); }
+.wizard-chip:disabled { cursor: not-allowed; color: var(--text-muted); opacity: .7; }
+.wizard-chip:disabled:hover { border-color: var(--border); background: var(--surface); }
+.wizard-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.wizard-soon { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
+
+.wizard-time-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.wizard-time-row { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); padding: 4px 4px 4px 10px; }
+.wizard-time-row input[type="time"] { border: 0; background: transparent; color: var(--text); font-size: .9rem; min-height: 32px; }
+.wizard-time-row .icon-button { width: 30px; height: 30px; }
+
+.wizard-weekday-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+
+.wizard-duration-fields { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: 4px; }
+.wizard-duration-fields label { display: flex; flex-direction: column; gap: 5px; color: var(--text); font-size: .82rem; font-weight: 650; }
+
+.wizard-summary { margin: 0; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--surface); padding: 10px 13px; color: var(--text-muted); font-size: .84rem; line-height: 1.45; }
 
 /* ===== Telegram ===== */
 .telegram-card { align-items: flex-start; }
@@ -401,11 +435,13 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
     .composer { width: calc(100% - 24px); margin-bottom: 28px; border-radius: 16px; }
     .safety-note { padding: 0 12px; font-size: .68rem; }
     .history-panel, .medications-panel, .reminders-panel { width: calc(100% - 24px); margin: 14px auto; padding: 18px; }
-    .medication-fields, .edit-fields, .reminder-fields, .reminder-edit-fields, .history-layout { grid-template-columns: 1fr; }
-    .medication-form, .reminder-form { align-items: stretch; flex-direction: column; }
-    .reminder-active-field { align-self: auto; padding-bottom: 0; }
+    .medication-fields, .edit-fields, .history-layout { grid-template-columns: 1fr; }
+    .medication-form { align-items: stretch; flex-direction: column; }
     .notification-settings { align-items: stretch; flex-direction: column; gap: 12px; padding: 14px; }
     .notification-settings #notification-toggle { width: 100%; }
+    .reminder-wizard-heading { flex-wrap: wrap; }
+    .wizard-step label { max-width: none; }
+    .wizard-chip { min-height: 42px; }
 }
 @media (max-width: 480px) {
     .auth-card { padding: 24px; }

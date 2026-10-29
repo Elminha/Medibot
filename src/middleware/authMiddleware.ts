@@ -18,6 +18,11 @@ export async function requireAuthentication(
     response: Response,
     next: NextFunction
 ): Promise<void> {
+    // Dados de um usuário autenticado (lembretes, medicamentos, histórico) nunca devem
+    // ficar no cache HTTP do navegador: um 304 aqui não significa "nada mudou", pode só
+    // significar que o navegador não revalidou o corpo da resposta.
+    response.set("Cache-Control", "no-store");
+
     const authorization = request.header("authorization");
     const token = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
 
