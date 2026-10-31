@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import {
     clearNotificationsUnsupportedFlag,
     DEFAULT_REMINDER_TIME_ZONE,
@@ -17,6 +20,24 @@ import {
 
 const active = (id, times, overrides = {}) => ({
     id, times, weekdays: [], startsOn: null, endsOn: null, active: true, ...overrides
+});
+
+// Mesmas fixtures usadas por tests/reminderOccurrences.test.ts (lado do servidor, em
+// TypeScript) contra getReminderOccurrences deste arquivo (lado do navegador): as duas
+// implementações são portas manuais uma da outra (ver comentário no topo de
+// src/services/reminderOccurrences.ts) e precisam continuar concordando em cada caso.
+const fixturesPath = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "fixtures",
+    "reminderOccurrences.json"
+);
+const sharedOccurrenceFixtures = JSON.parse(readFileSync(fixturesPath, "utf8"));
+
+test("fixtures compartilhadas com o lado TypeScript: getReminderOccurrences (lado navegador)", () => {
+    for (const fixture of sharedOccurrenceFixtures) {
+        const result = getReminderOccurrences(fixture.reminder, new Date(fixture.date), fixture.timezone);
+        assert.deepEqual(result, fixture.expected, fixture.description);
+    }
 });
 
 test("interpreta horário e dia no fuso informado, não no fuso do dispositivo", () => {

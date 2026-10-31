@@ -1,5 +1,12 @@
 import { getDatabasePool } from "../database/database.js";
 import { getMedicationById } from "./medicationService.js";
+import {
+    replaceReminderChannels,
+    validateChannelsForUser,
+    type ReminderChannel
+} from "./reminderChannelService.js";
+
+export { TelegramChannelRequiresLinkError } from "./reminderChannelService.js";
 
 const WEEKDAYS_MON_TO_FRI = [1, 2, 3, 4, 5];
 
@@ -25,6 +32,7 @@ export interface ReminderInput {
     startsOn?: string;
     endsOn?: string | null;
     active?: boolean;
+    channels?: ReminderChannel[];
 }
 
 export interface ReminderUpdateInput {
@@ -34,6 +42,7 @@ export interface ReminderUpdateInput {
     startsOn?: string;
     endsOn?: string | null;
     active?: boolean;
+    channels?: ReminderChannel[];
 }
 
 interface ReminderRow {
@@ -45,6 +54,7 @@ interface ReminderRow {
     ends_on: string | null;
     times: string[] | null;
     weekdays: number[] | null;
+    channels: string[] | null;
 }
 
 export class ReminderNotFoundError extends Error {
@@ -96,7 +106,7 @@ function toReminder(row: ReminderRow, today: string): Reminder {
         endsOn,
         active: row.active,
         status: statusOf({ active: row.active, endsOn }, today),
-        channels: ["browser"]
+        channels: row.channels ?? []
     };
 }
 
@@ -116,7 +126,12 @@ const SELECT_REMINDER_COLUMNS = `
         (SELECT array_agg(rw.weekday ORDER BY rw.weekday)
          FROM reminder_weekdays rw WHERE rw.reminder_id = r.id),
         '{}'
-    ) AS weekdays
+    ) AS weekdays,
+    COALESCE(
+        (SELECT array_agg(rc.channel ORDER BY rc.channel)
+         FROM reminder_channels rc WHERE rc.reminder_id = r.id),
+        '{}'
+    ) AS channels
 `;
 
 async function insertScheduleRows(
@@ -153,6 +168,12 @@ export async function createReminder(
     const endsOn = input.endsOn ?? null;
     const active = input.active ?? true;
 
+    // Sem channels no payload: mantém o comportamento anterior ao Telegram (só
+    // "browser"), para compatibilidade com o front antigo, que nunca envia este campo.
+    const channels = input.channels !== undefined
+        ? await validateChannelsForUser(userId, input.channels)
+        : (["browser"] as ReminderChannel[]);
+
     const pool = getDatabasePool();
     const client = await pool.connect();
 
@@ -168,6 +189,7 @@ export async function createReminder(
         const reminderId = Number(result.rows[0].id);
 
         await insertScheduleRows(client, reminderId, sortedTimes, input.weekdays);
+        await replaceReminderChannels(client, reminderId, channels);
 
         await client.query("COMMIT");
         return getReminderById(userId, reminderId, timezone);
@@ -235,6 +257,13 @@ export async function updateReminder(
     const endsOn = input.endsOn !== undefined ? input.endsOn : current.endsOn;
     const active = input.active ?? current.active;
 
+    // Sem channels no payload: preserva os canais atuais sem revalidar o vínculo do
+    // Telegram (uma edição que não toca em channels não deve ser bloqueada por um
+    // desvínculo que aconteceu depois de o canal "telegram" já estar salvo).
+    const channels = input.channels !== undefined
+        ? await validateChannelsForUser(userId, input.channels)
+        : (current.channels as ReminderChannel[]);
+
     const pool = getDatabasePool();
     const client = await pool.connect();
 
@@ -262,6 +291,7 @@ export async function updateReminder(
         await client.query(`DELETE FROM reminder_times WHERE reminder_id = $1;`, [id]);
         await client.query(`DELETE FROM reminder_weekdays WHERE reminder_id = $1;`, [id]);
         await insertScheduleRows(client, id, sortedTimes, weekdays);
+        await replaceReminderChannels(client, id, channels);
 
         await client.query("COMMIT");
         return getReminderById(userId, id, timezone);

@@ -7,6 +7,7 @@ process.env.DATABASE_URL = "postgres://test:test@localhost:5432/medibot_test";
 
 const { getDatabasePool } = await import("../src/database/database.ts");
 const { MedicationNotFoundError } = await import("../src/services/medicationService.ts");
+const { TelegramChannelRequiresLinkError } = await import("../src/services/reminderChannelService.ts");
 const {
     createReminder,
     deleteReminder,
@@ -25,7 +26,10 @@ interface FakeReminder {
     active: boolean; starts_on: string; ends_on: string | null;
 }
 
-function setupDb() {
+function setupDb(users: Array<{ id: number; telegramChatId: number | null }> = [
+    { id: 10, telegramChatId: null },
+    { id: 20, telegramChatId: null }
+]) {
     const medications: FakeMedication[] = [
         { id: 1, user_id: 10, name: "Dipirona" },
         { id: 2, user_id: 20, name: "Losartana" }
@@ -33,6 +37,7 @@ function setupDb() {
     const reminders: FakeReminder[] = [];
     const reminderTimes: Array<{ reminder_id: number; time: string }> = [];
     const reminderWeekdays: Array<{ reminder_id: number; weekday: number }> = [];
+    const reminderChannels: Array<{ reminder_id: number; channel: string }> = [];
     let nextReminderId = 1;
 
     function buildReminderRow(r: FakeReminder) {
@@ -42,6 +47,10 @@ function setupDb() {
             .filter((w) => w.reminder_id === r.id)
             .map((w) => w.weekday)
             .sort((a, b) => a - b);
+        const channels = reminderChannels
+            .filter((c) => c.reminder_id === r.id)
+            .map((c) => c.channel)
+            .sort();
         return {
             id: String(r.id),
             medication_id: String(r.medication_id),
@@ -50,7 +59,8 @@ function setupDb() {
             starts_on: r.starts_on,
             ends_on: r.ends_on,
             times,
-            weekdays
+            weekdays,
+            channels
         };
     }
 
@@ -59,6 +69,14 @@ function setupDb() {
 
         if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") {
             return { rows: [], rowCount: 0 };
+        }
+
+        if (sql.includes("SELECT telegram_chat_id FROM users WHERE id = $1")) {
+            const [id] = params as [number];
+            const user = users.find((u) => u.id === id);
+            return user
+                ? { rows: [{ telegram_chat_id: user.telegramChatId === null ? null : String(user.telegramChatId) }], rowCount: 1 }
+                : { rows: [], rowCount: 0 };
         }
 
         if (sql.includes("FROM medications") && sql.includes("WHERE id = $1 AND user_id = $2")) {
@@ -93,6 +111,20 @@ function setupDb() {
             const [reminderId, weekday] = params as [number, number];
             reminderWeekdays.push({ reminder_id: reminderId, weekday });
             return { rows: [], rowCount: 1 };
+        }
+
+        if (sql.startsWith("INSERT INTO reminder_channels")) {
+            const [reminderId, channel] = params as [number, string];
+            reminderChannels.push({ reminder_id: reminderId, channel });
+            return { rows: [], rowCount: 1 };
+        }
+
+        if (sql.startsWith("DELETE FROM reminder_channels")) {
+            const [reminderId] = params as [number];
+            for (let i = reminderChannels.length - 1; i >= 0; i -= 1) {
+                if (reminderChannels[i].reminder_id === reminderId) reminderChannels.splice(i, 1);
+            }
+            return { rows: [], rowCount: 0 };
         }
 
         if (sql.includes("FROM reminders r") && sql.includes("WHERE r.id = $1 AND m.user_id = $2")) {
@@ -161,7 +193,7 @@ function setupDb() {
         release: () => {}
     }));
 
-    return { medications, reminders, reminderTimes, reminderWeekdays };
+    return { medications, reminders, reminderTimes, reminderWeekdays, reminderChannels, users };
 }
 
 test.afterEach(() => {
@@ -283,4 +315,56 @@ test("deleteReminder remove lembrete do dono e recusa de outro usuário", async 
     await assert.rejects(deleteReminder(20, created.id), ReminderNotFoundError);
     await deleteReminder(10, created.id);
     await assert.rejects(getReminderById(10, created.id, "America/Sao_Paulo"), ReminderNotFoundError);
+});
+
+test("createReminder sem channels no payload mantém o comportamento antigo (só 'browser')", async () => {
+    setupDb();
+    const reminder = await createReminder(10, { medicationId: 1, times: ["08:00"], weekdays: [] }, "America/Sao_Paulo");
+    assert.deepEqual(reminder.channels, ["browser"]);
+});
+
+test("createReminder com channels=['browser','telegram'] exige vínculo do Telegram", async () => {
+    setupDb();
+    await assert.rejects(
+        createReminder(10, { medicationId: 1, times: ["08:00"], weekdays: [], channels: ["browser", "telegram"] }, "America/Sao_Paulo"),
+        TelegramChannelRequiresLinkError
+    );
+});
+
+test("createReminder com channels=['telegram'] funciona quando o usuário tem vínculo", async () => {
+    setupDb([{ id: 10, telegramChatId: 777 }, { id: 20, telegramChatId: null }]);
+    const reminder = await createReminder(10, { medicationId: 1, times: ["08:00"], weekdays: [], channels: ["telegram"] }, "America/Sao_Paulo");
+    assert.deepEqual(reminder.channels, ["telegram"]);
+});
+
+test("createReminder deduplica e ordena os canais informados", async () => {
+    setupDb([{ id: 10, telegramChatId: 777 }, { id: 20, telegramChatId: null }]);
+    const reminder = await createReminder(
+        10,
+        { medicationId: 1, times: ["08:00"], weekdays: [], channels: ["telegram", "browser", "telegram"] },
+        "America/Sao_Paulo"
+    );
+    assert.deepEqual(reminder.channels, ["browser", "telegram"]);
+});
+
+test("updateReminder sem channels no payload preserva os canais atuais, mesmo sem vínculo no momento da edição", async () => {
+    const users = [{ id: 10, telegramChatId: 777 }, { id: 20, telegramChatId: null }];
+    setupDb(users);
+    const created = await createReminder(10, { medicationId: 1, times: ["08:00"], weekdays: [], channels: ["telegram"] }, "America/Sao_Paulo");
+
+    // Usuário desvincula o Telegram depois de já ter salvo o canal "telegram".
+    users[0].telegramChatId = null;
+
+    const updated = await updateReminder(10, created.id, { active: false }, "America/Sao_Paulo");
+    assert.deepEqual(updated.channels, ["telegram"]);
+    assert.equal(updated.active, false);
+});
+
+test("updateReminder com channels explícito revalida o vínculo do Telegram", async () => {
+    setupDb();
+    const created = await createReminder(10, { medicationId: 1, times: ["08:00"], weekdays: [] }, "America/Sao_Paulo");
+    await assert.rejects(
+        updateReminder(10, created.id, { channels: ["telegram"] }, "America/Sao_Paulo"),
+        TelegramChannelRequiresLinkError
+    );
 });
