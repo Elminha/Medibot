@@ -20,7 +20,9 @@ import {
     resolveStartsOnFromNativePicker,
     stepTimeValue,
     summarizeReminder,
-    summarizeSchedule
+    summarizeSchedule,
+    wizardTimesAreComplete,
+    wizardTimesHaveNoDuplicates
 } from "../public/reminderWizard.js";
 
 test("1x a 4x por dia distribui os horários igualmente a partir do primeiro horário", () => {
@@ -200,6 +202,20 @@ test("stepTimeValue: ArrowUp/Down ±1 minuto e PageUp/Down ±1 hora, com volta e
     assert.equal(stepTimeValue("10:30", 60), "11:30");
     assert.equal(stepTimeValue("23:00", 60), "00:00");
     assert.equal(stepTimeValue("", 1), "00:01", "campo vazio/inválido parte de 00:00");
+});
+
+test("wizardTimesAreComplete: lista vazia ou com algum horário em branco/inválido fica incompleta", () => {
+    assert.equal(wizardTimesAreComplete([]), false);
+    assert.equal(wizardTimesAreComplete([""]), false);
+    assert.equal(wizardTimesAreComplete(["08:00", ""]), false);
+    assert.equal(wizardTimesAreComplete(["08:00", "25:00"]), false);
+    assert.equal(wizardTimesAreComplete(["08:00", "20:00"]), true);
+});
+
+test("wizardTimesHaveNoDuplicates: compara só os horários válidos entre si", () => {
+    assert.equal(wizardTimesHaveNoDuplicates(["08:00", "08:00"]), false);
+    assert.equal(wizardTimesHaveNoDuplicates(["08:00", "20:00"]), true);
+    assert.equal(wizardTimesHaveNoDuplicates(["", ""]), true, "em branco não conta como duplicata");
 });
 
 // ===== editDateField: mesma edição com posições fixas, para "DD/MM/AAAA" =====

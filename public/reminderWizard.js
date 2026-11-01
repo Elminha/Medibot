@@ -69,6 +69,17 @@ export function isValidTimeString(value) {
     return typeof value === "string" && TIME_PATTERN.test(value);
 }
 
+/** Todas as entradas (incluindo as em branco) são horários válidos, e há pelo menos uma. */
+export function wizardTimesAreComplete(times) {
+    return times.length > 0 && times.every(isValidTimeString);
+}
+
+/** Nenhum horário se repete (comparação feita só entre os já válidos). */
+export function wizardTimesHaveNoDuplicates(times) {
+    const validTimes = times.filter(isValidTimeString);
+    return new Set(validTimes).size === validTimes.length;
+}
+
 /**
  * Valida "DD/MM/AAAA" como data de calendário real (rejeita 31/02, 30/02 etc.).
  * Aceita "_" nas posições (usado só internamente pelos testes/edição); um valor

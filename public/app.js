@@ -27,7 +27,9 @@ import {
     resolveStartsOnFromNativePicker,
     stepTimeValue,
     summarizeReminder,
-    summarizeSchedule
+    summarizeSchedule,
+    wizardTimesAreComplete,
+    wizardTimesHaveNoDuplicates
 } from "./reminderWizard.js";
 import {
     formatCountdown,
@@ -921,6 +923,25 @@ function setReminderFeedback(message = "", type = "") {
     reminderFeedback.className = `reminder-feedback${type ? ` feedback-${type}` : ""}`;
 }
 
+/** Mensagens de validação do assistente de lembretes: central única para poder
+ * limpar (ao corrigir o campo) a mesma mensagem que foi exibida ao tentar salvar. */
+const WIZARD_FEEDBACK_MESSAGES = {
+    medication: "Selecione o medicamento deste lembrete.",
+    timesIncomplete: "Preencha todos os horários (ou remova os que ficaram em branco).",
+    timesDuplicate: "Os horários não podem se repetir.",
+    channels: "Escolha ao menos um canal de aviso (Navegador ou Telegram).",
+    startsOn: "Informe uma data de início válida (DD/MM/AAAA).",
+    durationDays: "Informe por quantos dias o lembrete deve continuar (1 ou mais)."
+};
+
+/** Some a mensagem de erro perto do botão Salvar se ela for a mensagem dada
+ * (nunca apaga uma mensagem de erro diferente, ainda pendente). */
+function clearWizardFeedbackIfShowing(message) {
+    if (reminderFeedback.textContent === message) {
+        setReminderFeedback("");
+    }
+}
+
 function setReminderLoading(isLoading) {
     reminderList.setAttribute("aria-busy", String(isLoading));
     wizardSaveButton.disabled = isLoading || currentMedications.length === 0;
@@ -1529,6 +1550,17 @@ function clearWizardChannelsError() {
     wizardChannelsError.hidden = true;
 }
 
+/** Limpa a mensagem de horários (incompletos/duplicados) perto do botão Salvar
+ * assim que `wizardTimes` deixa de ter o problema que a gerou. */
+function clearWizardTimesFeedbackIfResolved() {
+    if (wizardTimesAreComplete(wizardTimes)) {
+        clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.timesIncomplete);
+    }
+    if (wizardTimesHaveNoDuplicates(wizardTimes)) {
+        clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.timesDuplicate);
+    }
+}
+
 /**
  * Liga um <input type="text"> a um editor de posições fixas (editTimeField ou
  * editDateField, de reminderWizard.js): dígito sobrescreve a célula sob o cursor
@@ -1670,6 +1702,7 @@ function renderWizardTimeList() {
                 } else {
                     wizardTimes[index] = value;
                 }
+                clearWizardTimesFeedbackIfResolved();
                 updateWizardSummary();
             }
         });
@@ -1685,6 +1718,7 @@ function renderWizardTimeList() {
                 wizardIntervalHours = null;
                 setWizardChipGroupPressed(wizardFrequencyOptions, (candidate) => candidate === wizardChooseTimesButton);
                 renderWizardTimeList();
+                clearWizardTimesFeedbackIfResolved();
                 updateWizardSummary();
             });
             row.append(removeButton);
@@ -1714,6 +1748,7 @@ function setStartsOnIso(iso) {
     wizardStartsOnDisplay.value = iso ? formatDateBr(iso) : "";
     wizardStartsOnDisplay.classList.remove("input-error");
     wizardStartsOnError.hidden = true;
+    clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.startsOn);
 }
 
 /** Ao sair do campo (blur) ou Enter: preenche buracos da edição ("2_/10/2026" ->
@@ -1724,6 +1759,7 @@ function commitStartsOnDisplay() {
         wizardStartsOnInput.value = "";
         wizardStartsOnDisplay.classList.remove("input-error");
         wizardStartsOnError.hidden = true;
+        clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.startsOn);
         updateWizardSummary();
         return;
     }
@@ -1737,6 +1773,7 @@ function commitStartsOnDisplay() {
     wizardStartsOnInput.value = brDateToIso(normalized);
     wizardStartsOnDisplay.classList.remove("input-error");
     wizardStartsOnError.hidden = true;
+    clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.startsOn);
     updateWizardSummary();
 }
 
@@ -1824,7 +1861,13 @@ reminderWizardToggle.addEventListener("click", () => {
 });
 
 wizardCancelButton.addEventListener("click", () => resetReminderWizard());
-wizardMedicationInput.addEventListener("change", updateWizardSummary);
+wizardMedicationInput.addEventListener("change", () => {
+    if (wizardMedicationInput.value) {
+        wizardMedicationInput.classList.remove("input-error");
+        clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.medication);
+    }
+    updateWizardSummary();
+});
 
 wizardFrequencyOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
     chip.addEventListener("click", () => {
@@ -1842,6 +1885,7 @@ wizardFrequencyOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
         }
         renderWizardTimeList();
         setWizardChipGroupPressed(wizardFrequencyOptions, (candidate) => candidate === chip);
+        clearWizardTimesFeedbackIfResolved();
         updateWizardSummary();
     });
 });
@@ -1888,6 +1932,7 @@ wizardChannelOptions.querySelectorAll(".wizard-chip[data-channel]").forEach((chi
             : [...wizardChannels, channel];
         renderWizardChannelChips();
         clearWizardChannelsError();
+        if (wizardChannels.length) clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.channels);
         updateWizardSummary();
     });
 });
@@ -1901,12 +1946,22 @@ wizardDurationModeOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
         if (wizardDurationMode === "days" && !wizardStartsOnInput.value) {
             setStartsOnIso(todayLocalDateInput());
         }
+        if (wizardDurationMode !== "days") {
+            clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.startsOn);
+            clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.durationDays);
+        }
         setWizardChipGroupPressed(wizardDurationModeOptions, (candidate) => candidate === chip);
         updateWizardSummary();
     });
 });
 
-wizardDurationDaysInput.addEventListener("input", updateWizardSummary);
+wizardDurationDaysInput.addEventListener("input", () => {
+    const totalDays = Number(wizardDurationDaysInput.value);
+    if (Number.isInteger(totalDays) && totalDays >= 1) {
+        clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.durationDays);
+    }
+    updateWizardSummary();
+});
 
 wireFixedPositionEditing(wizardStartsOnDisplay, editDateField, () => {
     wizardStartsOnDisplay.classList.remove("input-error");
@@ -1955,20 +2010,20 @@ reminderWizardForm.addEventListener("submit", async (event) => {
 
     wizardMedicationInput.classList.toggle("input-error", !medicationId);
     if (!medicationId) {
-        setReminderFeedback("Selecione o medicamento deste lembrete.", "error");
+        setReminderFeedback(WIZARD_FEEDBACK_MESSAGES.medication, "error");
         return;
     }
     if (!times.length || times.length !== wizardTimes.length) {
-        setReminderFeedback("Preencha todos os horários (ou remova os que ficaram em branco).", "error");
+        setReminderFeedback(WIZARD_FEEDBACK_MESSAGES.timesIncomplete, "error");
         return;
     }
     if (uniqueTimes.size !== times.length) {
-        setReminderFeedback("Os horários não podem se repetir.", "error");
+        setReminderFeedback(WIZARD_FEEDBACK_MESSAGES.timesDuplicate, "error");
         return;
     }
     if (!wizardChannels.length) {
         wizardChannelsError.hidden = false;
-        setReminderFeedback("Escolha ao menos um canal de aviso (Navegador ou Telegram).", "error");
+        setReminderFeedback(WIZARD_FEEDBACK_MESSAGES.channels, "error");
         return;
     }
     wizardChannelsError.hidden = true;
@@ -1977,14 +2032,14 @@ reminderWizardForm.addEventListener("submit", async (event) => {
     if (wizardDurationMode === "days") {
         commitStartsOnDisplay();
         if (wizardStartsOnDisplay.classList.contains("input-error")) {
-            setReminderFeedback("Informe uma data de início válida (DD/MM/AAAA).", "error");
+            setReminderFeedback(WIZARD_FEEDBACK_MESSAGES.startsOn, "error");
             return;
         }
         const startsOn = wizardStartsOnInput.value || todayLocalDateInput();
         const totalDays = Number(wizardDurationDaysInput.value);
         const endsOn = computeEndsOn(startsOn, totalDays);
         if (!endsOn) {
-            setReminderFeedback("Informe por quantos dias o lembrete deve continuar (1 ou mais).", "error");
+            setReminderFeedback(WIZARD_FEEDBACK_MESSAGES.durationDays, "error");
             return;
         }
         payload.startsOn = startsOn;
