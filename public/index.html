@@ -329,9 +329,14 @@
                         <p class="wizard-step-label" id="wizard-channels-label">Onde avisar?</p>
                         <div class="wizard-chip-group" id="wizard-channel-options" role="group" aria-labelledby="wizard-channels-label">
                             <button type="button" class="wizard-chip" data-channel="browser" aria-pressed="true">Navegador</button>
-                            <button type="button" class="wizard-chip" disabled title="Em breve">Telegram <span class="wizard-soon">em breve</span></button>
+                            <button type="button" class="wizard-chip" data-channel="telegram" aria-pressed="false" disabled>Telegram</button>
                             <button type="button" class="wizard-chip" disabled title="Em breve">E-mail <span class="wizard-soon">em breve</span></button>
                         </div>
+                        <p class="wizard-hint" id="wizard-channels-telegram-hint" hidden>
+                            Conecte o Telegram para receber aqui.
+                            <button type="button" class="text-button" id="wizard-channels-telegram-link">Ir para o Telegram</button>
+                        </p>
+                        <p class="field-error-message" id="wizard-channels-error" hidden>Escolha ao menos um canal de aviso (Navegador ou Telegram).</p>
                     </section>
 
                     <div class="wizard-summary-block">
@@ -399,7 +404,7 @@
                     <li><code>/desvincular</code> — desconecte esta conta do bot</li>
                     <li><code>/ajuda</code> — veja esta lista de novo</li>
                 </ul>
-                <p class="telegram-soon-note">Em breve: lembretes de medicamentos pelo Telegram.</p>
+                <p class="telegram-soon-note">Lembretes: escolha o canal Telegram ao criar um lembrete e ele será enviado aqui no horário.</p>
             </section>
         </section>
 

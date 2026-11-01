@@ -6,6 +6,7 @@ import {
     countDaysInclusive,
     editDateField,
     editTimeField,
+    formatChannelsSummary,
     formatDateBr,
     formatWeekdaysSummary,
     generateEvenlySpacedTimes,
@@ -267,5 +268,34 @@ test("summarizeReminder monta a linha de resumo usada antes de salvar e na lista
             medicationName: "Losartana", times: ["09:00"], weekdays: [1, 2, 3, 4, 5], endsOn: "2024-03-16", status: "paused"
         }),
         "Losartana — 09:00 — Seg, Ter, Qua, Qui, Sex — até 16/03/2024 (pausado)"
+    );
+});
+
+// ===== Canais (channels): Fase 2 do Telegram (interface) =====
+
+test("formatChannelsSummary: ordem fixa Navegador, Telegram; vazio/inválido não gera nada", () => {
+    assert.equal(formatChannelsSummary(["browser"]), "Navegador");
+    assert.equal(formatChannelsSummary(["telegram"]), "Telegram");
+    assert.equal(formatChannelsSummary(["telegram", "browser"]), "Navegador e Telegram", "ordem fixa, não a de entrada");
+    assert.equal(formatChannelsSummary(["browser", "browser"]), "Navegador", "sem duplicar");
+    assert.equal(formatChannelsSummary([]), "");
+    assert.equal(formatChannelsSummary(undefined), "");
+    assert.equal(formatChannelsSummary(null), "");
+});
+
+test("summarizeSchedule/summarizeReminder mencionam os canais quando informados, e nada quando channels é omitido (compatibilidade)", () => {
+    const schedule = { times: ["08:00"], weekdays: [], endsOn: null, status: "active" };
+    assert.equal(summarizeSchedule(schedule), "08:00 — Todos os dias — sem data para terminar", "sem channels: formato inalterado");
+    assert.equal(
+        summarizeSchedule({ ...schedule, channels: ["browser"] }),
+        "08:00 — Todos os dias — sem data para terminar — avisa por Navegador"
+    );
+    assert.equal(
+        summarizeSchedule({ ...schedule, channels: ["browser", "telegram"] }),
+        "08:00 — Todos os dias — sem data para terminar — avisa por Navegador e Telegram"
+    );
+    assert.equal(
+        summarizeReminder({ medicationName: "Dipirona", ...schedule, channels: ["telegram"] }),
+        "Dipirona — 08:00 — Todos os dias — sem data para terminar — avisa por Telegram"
     );
 });

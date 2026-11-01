@@ -360,6 +360,22 @@ export function normalizeTypedDateBr(rawValue) {
     return str.replace(new RegExp(HOLE, "g"), "0");
 }
 
+export const REMINDER_CHANNEL_LABELS = { browser: "Navegador", telegram: "Telegram" };
+const CHANNEL_DISPLAY_ORDER = ["browser", "telegram"];
+
+/** "Navegador", "Telegram" ou "Navegador e Telegram" (ordem fixa); "" se vazio/inválido. */
+export function formatChannelsSummary(channels) {
+    if (!Array.isArray(channels) || channels.length === 0) {
+        return "";
+    }
+
+    const unique = new Set(channels);
+    return CHANNEL_DISPLAY_ORDER
+        .filter((channel) => unique.has(channel))
+        .map((channel) => REMINDER_CHANNEL_LABELS[channel] || channel)
+        .join(" e ");
+}
+
 export function formatWeekdaysSummary(weekdays) {
     if (!Array.isArray(weekdays) || weekdays.length === 0) {
         return "Todos os dias";
@@ -407,15 +423,17 @@ export function countDaysInclusive(startsOn, endsOn) {
 }
 
 /** Resumo de uma linha usado antes de salvar e na lista de lembretes. */
-export function summarizeSchedule({ times, weekdays, endsOn, status }) {
+export function summarizeSchedule({ times, weekdays, endsOn, status, channels }) {
     const timesLabel = Array.isArray(times) && times.length ? times.join(", ") : "sem horário definido";
     const daysLabel = formatWeekdaysSummary(weekdays);
     const durationLabel = endsOn ? `até ${formatDateBr(endsOn)}` : "sem data para terminar";
     const statusLabel = status === "paused" ? " (pausado)" : status === "ended" ? " (encerrado)" : "";
+    const channelsLabel = formatChannelsSummary(channels);
+    const channelsSuffix = channelsLabel ? ` — avisa por ${channelsLabel}` : "";
 
-    return `${timesLabel} — ${daysLabel} — ${durationLabel}${statusLabel}`;
+    return `${timesLabel} — ${daysLabel} — ${durationLabel}${statusLabel}${channelsSuffix}`;
 }
 
-export function summarizeReminder({ medicationName, times, weekdays, endsOn, status }) {
-    return `${medicationName} — ${summarizeSchedule({ times, weekdays, endsOn, status })}`;
+export function summarizeReminder({ medicationName, times, weekdays, endsOn, status, channels }) {
+    return `${medicationName} — ${summarizeSchedule({ times, weekdays, endsOn, status, channels })}`;
 }

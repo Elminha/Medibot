@@ -145,6 +145,7 @@ export function getNextOccurrence(reminders, now, timezone = DEFAULT_REMINDER_TI
         const candidateDate = new Date(nowMs + dayOffset * 86_400_000);
         let best = null;
         for (const reminder of reminders) {
+            if (!reminderHasBrowserChannel(reminder)) continue;
             for (const occurrence of getReminderOccurrences(reminder, candidateDate, timezone)) {
                 if (occurrence.at < nowMs) continue;
                 if (!best || occurrence.at < best.occurrence.at) best = { reminder, occurrence };
@@ -160,6 +161,18 @@ export function getNextOccurrence(reminders, now, timezone = DEFAULT_REMINDER_TI
         }
     }
     return null;
+}
+
+/**
+ * Lembretes antigos/em cache podem não ter `channels` (API anterior ao canal
+ * Telegram): tratado como ["browser"], preservando o comportamento de antes. Só
+ * lembretes com o canal "browser" podem gerar notificação do navegador ou aparecer
+ * em "Próximo lembrete" — um lembrete só com "telegram" é entregue pelo bot, nunca
+ * por aqui.
+ */
+export function reminderHasBrowserChannel(reminder) {
+    const channels = Array.isArray(reminder?.channels) ? reminder.channels : ["browser"];
+    return channels.includes("browser");
 }
 
 export function getNotificationAvailability({ notification, isSecureContext }) {
@@ -231,7 +244,9 @@ export class ReminderNotificationScheduler {
         this.lastCheck = null;
     }
 
-    setReminders(reminders) { this.reminders = reminders.filter((reminder) => reminder?.active === true); }
+    setReminders(reminders) {
+        this.reminders = reminders.filter((reminder) => reminder?.active === true && reminderHasBrowserChannel(reminder));
+    }
 
     start() {
         if (this.timer !== null) return;

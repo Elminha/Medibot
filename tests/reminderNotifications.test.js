@@ -13,6 +13,7 @@ import {
     getTimezoneParts,
     isLikelyUnsupportedNotificationUserAgent,
     readNotificationsUnsupportedFlag,
+    reminderHasBrowserChannel,
     ReminderNotificationScheduler,
     startReminderSchedulerIfAllowed,
     writeNotificationsUnsupportedFlag
@@ -475,6 +476,55 @@ test("flag de notificações sem suporte não lança com localStorage indisponí
     assert.doesNotThrow(() => clearNotificationsUnsupportedFlag(throwingStorage));
     assert.equal(readNotificationsUnsupportedFlag(null), false, "sem storage nenhum (ex.: window.localStorage indisponível)");
     assert.doesNotThrow(() => writeNotificationsUnsupportedFlag(undefined));
+});
+
+// ===== Canal "browser" (Fase 2 do Telegram): só lembrete com o canal certo notifica =====
+
+test("reminderHasBrowserChannel: sem channels (API antiga/cache) é tratado como [\"browser\"]", () => {
+    assert.equal(reminderHasBrowserChannel(active(1, ["08:00"])), true);
+    assert.equal(reminderHasBrowserChannel(active(1, ["08:00"], { channels: ["browser"] })), true);
+    assert.equal(reminderHasBrowserChannel(active(1, ["08:00"], { channels: ["browser", "telegram"] })), true);
+    assert.equal(reminderHasBrowserChannel(active(1, ["08:00"], { channels: ["telegram"] })), false);
+    assert.equal(reminderHasBrowserChannel(active(1, ["08:00"], { channels: [] })), false);
+});
+
+test("lembrete só com o canal telegram não gera notificação do navegador", () => {
+    let now = new Date("2024-01-08T13:29:50.000Z");
+    const notifications = [];
+    class MockNotification { constructor(_title, options) { notifications.push(options); } }
+    const scheduler = new ReminderNotificationScheduler({
+        userId: 1, notification: MockNotification, storage: null, onNavigate() {}, now: () => now, setIntervalFn: () => 1, clearIntervalFn() {}
+    });
+    scheduler.setReminders([active(9, ["10:30"], { channels: ["telegram"] })]);
+    now = new Date("2024-01-08T13:30:03.000Z");
+    scheduler.check();
+    assert.equal(notifications.length, 0);
+    scheduler.stop();
+});
+
+test("lembrete com os dois canais continua notificando normalmente pelo navegador", () => {
+    let now = new Date("2024-01-08T13:29:50.000Z");
+    const notifications = [];
+    class MockNotification { constructor(_title, options) { notifications.push(options); } }
+    const scheduler = new ReminderNotificationScheduler({
+        userId: 1, notification: MockNotification, storage: null, onNavigate() {}, now: () => now, setIntervalFn: () => 1, clearIntervalFn() {}
+    });
+    scheduler.setReminders([active(9, ["10:30"], { channels: ["browser", "telegram"] })]);
+    now = new Date("2024-01-08T13:30:03.000Z");
+    scheduler.check();
+    assert.equal(notifications.length, 1);
+    scheduler.stop();
+});
+
+test("getNextOccurrence ignora lembretes só com o canal telegram, mesmo sendo a próxima ocorrência", () => {
+    const now = new Date("2024-01-08T23:50:00.000Z");
+    const telegramOnly = active(3, ["02:59"], { medicationName: "Nimesulida", channels: ["telegram"] });
+    assert.equal(getNextOccurrence([telegramOnly], now, DEFAULT_REMINDER_TIME_ZONE), null);
+
+    const browserAlso = active(4, ["03:15"], { medicationName: "Dipirona", channels: ["browser", "telegram"] });
+    const next = getNextOccurrence([telegramOnly, browserAlso], now, DEFAULT_REMINDER_TIME_ZONE);
+    assert.ok(next);
+    assert.equal(next.medicationName, "Dipirona");
 });
 
 test("carregamento requer token e consulta apenas o endpoint do usuário autenticado", async () => {
