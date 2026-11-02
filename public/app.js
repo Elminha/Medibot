@@ -2571,6 +2571,7 @@ sidebarToggle.addEventListener("click", () => {
     sidebarToggle.setAttribute("aria-label", collapsed ? "Expandir menu" : "Recolher menu");
 });
 document.querySelector("#mobile-menu").addEventListener("click", () => document.querySelector("#sidebar").classList.toggle("mobile-open"));
+document.querySelector("#sidebar-brand-link").addEventListener("click", () => setView("chat"));
 
 document.querySelector("#show-register").addEventListener("click", showRegister);
 document.querySelector("#show-login").addEventListener("click", () => showLogin());
