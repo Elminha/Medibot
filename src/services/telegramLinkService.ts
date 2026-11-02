@@ -181,3 +181,13 @@ export async function getUserIdByChatId(chatId: number): Promise<number | undefi
     const row = result.rows[0];
     return row ? Number(row.id) : undefined;
 }
+
+/** Caminho inverso de getUserIdByChatId: usado para enviar mensagens a partir do user_id de um lembrete. */
+export async function getChatIdByUserId(userId: number): Promise<number | undefined> {
+    const result = await getDatabasePool().query<{ telegram_chat_id: string | null }>(
+        "SELECT telegram_chat_id FROM users WHERE id = $1;",
+        [userId]
+    );
+    const chatId = result.rows[0]?.telegram_chat_id;
+    return chatId !== null && chatId !== undefined ? Number(chatId) : undefined;
+}

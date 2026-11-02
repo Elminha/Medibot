@@ -6,6 +6,7 @@ import {
     countDaysInclusive,
     editDateField,
     editTimeField,
+    formatChannelsSummary,
     formatDateBr,
     formatWeekdaysSummary,
     generateEvenlySpacedTimes,
@@ -19,7 +20,9 @@ import {
     resolveStartsOnFromNativePicker,
     stepTimeValue,
     summarizeReminder,
-    summarizeSchedule
+    summarizeSchedule,
+    wizardTimesAreComplete,
+    wizardTimesHaveNoDuplicates
 } from "../public/reminderWizard.js";
 
 test("1x a 4x por dia distribui os horários igualmente a partir do primeiro horário", () => {
@@ -201,6 +204,20 @@ test("stepTimeValue: ArrowUp/Down ±1 minuto e PageUp/Down ±1 hora, com volta e
     assert.equal(stepTimeValue("", 1), "00:01", "campo vazio/inválido parte de 00:00");
 });
 
+test("wizardTimesAreComplete: lista vazia ou com algum horário em branco/inválido fica incompleta", () => {
+    assert.equal(wizardTimesAreComplete([]), false);
+    assert.equal(wizardTimesAreComplete([""]), false);
+    assert.equal(wizardTimesAreComplete(["08:00", ""]), false);
+    assert.equal(wizardTimesAreComplete(["08:00", "25:00"]), false);
+    assert.equal(wizardTimesAreComplete(["08:00", "20:00"]), true);
+});
+
+test("wizardTimesHaveNoDuplicates: compara só os horários válidos entre si", () => {
+    assert.equal(wizardTimesHaveNoDuplicates(["08:00", "08:00"]), false);
+    assert.equal(wizardTimesHaveNoDuplicates(["08:00", "20:00"]), true);
+    assert.equal(wizardTimesHaveNoDuplicates(["", ""]), true, "em branco não conta como duplicata");
+});
+
 // ===== editDateField: mesma edição com posições fixas, para "DD/MM/AAAA" =====
 
 test("editDateField: digitar em sequência num campo vazio monta 'DD/MM/AAAA' célula por célula", () => {
@@ -267,5 +284,34 @@ test("summarizeReminder monta a linha de resumo usada antes de salvar e na lista
             medicationName: "Losartana", times: ["09:00"], weekdays: [1, 2, 3, 4, 5], endsOn: "2024-03-16", status: "paused"
         }),
         "Losartana — 09:00 — Seg, Ter, Qua, Qui, Sex — até 16/03/2024 (pausado)"
+    );
+});
+
+// ===== Canais (channels): Fase 2 do Telegram (interface) =====
+
+test("formatChannelsSummary: ordem fixa Navegador, Telegram; vazio/inválido não gera nada", () => {
+    assert.equal(formatChannelsSummary(["browser"]), "Navegador");
+    assert.equal(formatChannelsSummary(["telegram"]), "Telegram");
+    assert.equal(formatChannelsSummary(["telegram", "browser"]), "Navegador e Telegram", "ordem fixa, não a de entrada");
+    assert.equal(formatChannelsSummary(["browser", "browser"]), "Navegador", "sem duplicar");
+    assert.equal(formatChannelsSummary([]), "");
+    assert.equal(formatChannelsSummary(undefined), "");
+    assert.equal(formatChannelsSummary(null), "");
+});
+
+test("summarizeSchedule/summarizeReminder mencionam os canais quando informados, e nada quando channels é omitido (compatibilidade)", () => {
+    const schedule = { times: ["08:00"], weekdays: [], endsOn: null, status: "active" };
+    assert.equal(summarizeSchedule(schedule), "08:00 — Todos os dias — sem data para terminar", "sem channels: formato inalterado");
+    assert.equal(
+        summarizeSchedule({ ...schedule, channels: ["browser"] }),
+        "08:00 — Todos os dias — sem data para terminar — avisa por Navegador"
+    );
+    assert.equal(
+        summarizeSchedule({ ...schedule, channels: ["browser", "telegram"] }),
+        "08:00 — Todos os dias — sem data para terminar — avisa por Navegador e Telegram"
+    );
+    assert.equal(
+        summarizeReminder({ medicationName: "Dipirona", ...schedule, channels: ["telegram"] }),
+        "Dipirona — 08:00 — Todos os dias — sem data para terminar — avisa por Telegram"
     );
 });

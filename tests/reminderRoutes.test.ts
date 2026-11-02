@@ -13,7 +13,7 @@ const reminderRoutes = (await import("../src/routes/reminderRoutes.ts")).default
 
 const pool = getDatabasePool();
 
-interface FakeUser { id: number; timezone: string; }
+interface FakeUser { id: number; timezone: string; telegramChatId: number | null; }
 interface FakeMedication { id: number; user_id: number; name: string; }
 interface FakeReminder {
     id: number; medication_id: number; time: string | null; frequency: string;
@@ -24,10 +24,10 @@ function tokenFor(userId: number): string {
     return jwt.sign({ sub: String(userId) }, process.env.JWT_SECRET as string, { expiresIn: "7d" });
 }
 
-function setupDb() {
+function setupDb(userOverrides: Partial<Record<number, number | null>> = {}) {
     const users: FakeUser[] = [
-        { id: 10, timezone: "America/Sao_Paulo" },
-        { id: 20, timezone: "America/Sao_Paulo" }
+        { id: 10, timezone: "America/Sao_Paulo", telegramChatId: userOverrides[10] ?? null },
+        { id: 20, timezone: "America/Sao_Paulo", telegramChatId: userOverrides[20] ?? null }
     ];
     const medications: FakeMedication[] = [
         { id: 1, user_id: 10, name: "Dipirona" },
@@ -36,6 +36,7 @@ function setupDb() {
     const reminders: FakeReminder[] = [];
     const reminderTimes: Array<{ reminder_id: number; time: string }> = [];
     const reminderWeekdays: Array<{ reminder_id: number; weekday: number }> = [];
+    const reminderChannels: Array<{ reminder_id: number; channel: string }> = [];
     let nextReminderId = 1;
 
     function buildReminderRow(r: FakeReminder) {
@@ -45,9 +46,13 @@ function setupDb() {
             .filter((w) => w.reminder_id === r.id)
             .map((w) => w.weekday)
             .sort((a, b) => a - b);
+        const channels = reminderChannels
+            .filter((c) => c.reminder_id === r.id)
+            .map((c) => c.channel)
+            .sort();
         return {
             id: String(r.id), medication_id: String(r.medication_id), medication_name: medication.name,
-            active: r.active, starts_on: r.starts_on, ends_on: r.ends_on, times, weekdays
+            active: r.active, starts_on: r.starts_on, ends_on: r.ends_on, times, weekdays, channels
         };
     }
 
@@ -58,6 +63,14 @@ function setupDb() {
             return { rows: [], rowCount: 0 };
         }
 
+        if (sql.includes("SELECT telegram_chat_id FROM users WHERE id = $1")) {
+            const [id] = params as [number];
+            const user = users.find((u) => u.id === id);
+            return user
+                ? { rows: [{ telegram_chat_id: user.telegramChatId === null ? null : String(user.telegramChatId) }], rowCount: 1 }
+                : { rows: [], rowCount: 0 };
+        }
+
         if (sql.includes("FROM users")) {
             const [id] = params as [number];
             const user = users.find((u) => u.id === id);
@@ -65,7 +78,7 @@ function setupDb() {
                 ? {
                     rows: [{
                         id: String(user.id), name: "Usuário Teste", email: "teste@exemplo.com", phone: null,
-                        timezone: user.timezone, password_hash: "hash", telegram_chat_id: null, password_changed_at: null
+                        timezone: user.timezone, password_hash: "hash", telegram_chat_id: user.telegramChatId === null ? null : String(user.telegramChatId), password_changed_at: null
                     }],
                     rowCount: 1
                 }
@@ -107,6 +120,20 @@ function setupDb() {
             const [reminderId, weekday] = params as [number, number];
             reminderWeekdays.push({ reminder_id: reminderId, weekday });
             return { rows: [], rowCount: 1 };
+        }
+
+        if (sql.startsWith("INSERT INTO reminder_channels")) {
+            const [reminderId, channel] = params as [number, string];
+            reminderChannels.push({ reminder_id: reminderId, channel });
+            return { rows: [], rowCount: 1 };
+        }
+
+        if (sql.startsWith("DELETE FROM reminder_channels")) {
+            const [reminderId] = params as [number];
+            for (let i = reminderChannels.length - 1; i >= 0; i -= 1) {
+                if (reminderChannels[i].reminder_id === reminderId) reminderChannels.splice(i, 1);
+            }
+            return { rows: [], rowCount: 0 };
         }
 
         if (sql.includes("FROM reminders r") && sql.includes("WHERE r.id = $1 AND m.user_id = $2")) {
@@ -178,7 +205,7 @@ function setupDb() {
         release: () => {}
     }));
 
-    return { users, medications, reminders };
+    return { users, medications, reminders, reminderChannels };
 }
 
 const app = express();
@@ -296,6 +323,77 @@ test("GET resposta não é cacheável (Cache-Control: no-store)", async () => {
     const response = await fetch(`${baseUrl}/api/reminders`, { headers: { Authorization: `Bearer ${tokenFor(10)}` } });
     assert.equal(response.headers.get("cache-control"), "no-store");
     assert.equal(response.headers.get("etag"), null);
+});
+
+test("POST sem channels no payload mantém compatibilidade: devolve só ['browser']", async () => {
+    setupDb();
+    const response = await fetch(`${baseUrl}/api/reminders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenFor(10)}` },
+        body: JSON.stringify({ medicationId: 1, times: ["08:00"], weekdays: [] })
+    });
+    assert.equal(response.status, 201);
+    const data = await response.json();
+    assert.deepEqual(data.reminder.channels, ["browser"]);
+});
+
+test("POST valida channels: array vazio, valor inválido e duplicata são 400", async () => {
+    setupDb();
+    const token = tokenFor(10);
+    const post = (body: unknown) => fetch(`${baseUrl}/api/reminders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body)
+    });
+
+    assert.equal((await post({ medicationId: 1, times: ["08:00"], weekdays: [], channels: [] })).status, 400);
+    assert.equal((await post({ medicationId: 1, times: ["08:00"], weekdays: [], channels: ["sms"] })).status, 400);
+    assert.equal((await post({
+        medicationId: 1, times: ["08:00"], weekdays: [], channels: ["browser", "browser"]
+    })).status, 400);
+});
+
+test("POST com channels=['telegram'] sem vínculo do Telegram recebe 400 com mensagem clara", async () => {
+    setupDb();
+    const response = await fetch(`${baseUrl}/api/reminders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenFor(10)}` },
+        body: JSON.stringify({ medicationId: 1, times: ["08:00"], weekdays: [], channels: ["telegram"] })
+    });
+    assert.equal(response.status, 400);
+    const data = await response.json();
+    assert.match(data.error, /Telegram/);
+});
+
+test("POST com channels=['telegram'] funciona quando o usuário tem o Telegram vinculado", async () => {
+    setupDb({ 10: 777 });
+    const response = await fetch(`${baseUrl}/api/reminders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenFor(10)}` },
+        body: JSON.stringify({ medicationId: 1, times: ["08:00"], weekdays: [], channels: ["browser", "telegram"] })
+    });
+    assert.equal(response.status, 201);
+    const data = await response.json();
+    assert.deepEqual(data.reminder.channels, ["browser", "telegram"]);
+});
+
+test("PUT sem channels no payload preserva os canais atuais do lembrete", async () => {
+    setupDb({ 10: 777 });
+    const token = tokenFor(10);
+    const created = await (await fetch(`${baseUrl}/api/reminders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ medicationId: 1, times: ["08:00"], weekdays: [], channels: ["telegram"] })
+    })).json();
+
+    const updateResponse = await fetch(`${baseUrl}/api/reminders/${created.reminder.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ active: false })
+    });
+    assert.equal(updateResponse.status, 200);
+    const updated = await updateResponse.json();
+    assert.deepEqual(updated.reminder.channels, ["telegram"]);
 });
 
 test("PUT substitui horários/dias e DELETE remove; dono de outro usuário recebe 404", async () => {

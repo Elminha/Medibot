@@ -5,6 +5,7 @@ import {
     getTimezoneParts,
     isLikelyUnsupportedNotificationUserAgent,
     readNotificationsUnsupportedFlag,
+    reminderHasBrowserChannel,
     startReminderSchedulerIfAllowed,
     writeNotificationsUnsupportedFlag
 } from "./reminderNotifications.js";
@@ -26,7 +27,9 @@ import {
     resolveStartsOnFromNativePicker,
     stepTimeValue,
     summarizeReminder,
-    summarizeSchedule
+    summarizeSchedule,
+    wizardTimesAreComplete,
+    wizardTimesHaveNoDuplicates
 } from "./reminderWizard.js";
 import {
     formatCountdown,
@@ -389,6 +392,8 @@ function clearApplicationData() {
     medicationForm.reset();
     resetReminderWizard();
     currentMedications = [];
+    currentReminders = [];
+    remindersDataLoaded = false;
 }
 
 function showAuthentication(message = "") {
@@ -500,7 +505,7 @@ function appendChatTelegramHint() {
     hint.id = "chat-telegram-hint";
     hint.hidden = telegramLinked === true;
     hint.append(
-        document.createTextNode("Dica: use o MediBot também no Telegram e, em breve, receba seus lembretes por lá."),
+        document.createTextNode("Dica: conecte o Telegram para consultar bulas e receber seus lembretes por lá."),
         medicationButton("Conectar Telegram", "text-button", () => setView("telegram"))
     );
     messages.append(hint);
@@ -639,6 +644,10 @@ const wizardStartsOnDisplay = document.querySelector("#wizard-starts-on-text");
 const wizardStartsOnError = document.querySelector("#wizard-starts-on-error");
 const wizardStartsOnCalendarButton = document.querySelector("#wizard-starts-on-calendar-button");
 const wizardStartsOnNativeInput = document.querySelector("#wizard-starts-on-native");
+const wizardChannelOptions = document.querySelector("#wizard-channel-options");
+const wizardChannelsTelegramHint = document.querySelector("#wizard-channels-telegram-hint");
+const wizardChannelsTelegramLink = document.querySelector("#wizard-channels-telegram-link");
+const wizardChannelsError = document.querySelector("#wizard-channels-error");
 const wizardSummary = document.querySelector("#wizard-summary");
 const reminderFeedback = document.querySelector("#reminder-feedback");
 const reminderWizardToggle = document.querySelector("#reminder-wizard-toggle");
@@ -655,6 +664,7 @@ let wizardIntervalHours = null; // 6 | 8 | 12 quando os horários vieram de "de 
 let wizardDayMode = "all";
 let wizardWeekdays = [];
 let wizardDurationMode = "forever";
+let wizardChannels = ["browser"];
 
 function setMedicationFeedback(message = "", type = "") {
     medicationFeedback.textContent = message;
@@ -913,6 +923,25 @@ function setReminderFeedback(message = "", type = "") {
     reminderFeedback.className = `reminder-feedback${type ? ` feedback-${type}` : ""}`;
 }
 
+/** Mensagens de validação do assistente de lembretes: central única para poder
+ * limpar (ao corrigir o campo) a mesma mensagem que foi exibida ao tentar salvar. */
+const WIZARD_FEEDBACK_MESSAGES = {
+    medication: "Selecione o medicamento deste lembrete.",
+    timesIncomplete: "Preencha todos os horários (ou remova os que ficaram em branco).",
+    timesDuplicate: "Os horários não podem se repetir.",
+    channels: "Escolha ao menos um canal de aviso (Navegador ou Telegram).",
+    startsOn: "Informe uma data de início válida (DD/MM/AAAA).",
+    durationDays: "Informe por quantos dias o lembrete deve continuar (1 ou mais)."
+};
+
+/** Some a mensagem de erro perto do botão Salvar se ela for a mensagem dada
+ * (nunca apaga uma mensagem de erro diferente, ainda pendente). */
+function clearWizardFeedbackIfShowing(message) {
+    if (reminderFeedback.textContent === message) {
+        setReminderFeedback("");
+    }
+}
+
 function setReminderLoading(isLoading) {
     reminderList.setAttribute("aria-busy", String(isLoading));
     wizardSaveButton.disabled = isLoading || currentMedications.length === 0;
@@ -955,6 +984,14 @@ function statusLabel(status) {
     return status === "ended" ? "Encerrado" : status === "paused" ? "Pausado" : "Ativo";
 }
 
+function reminderChannelBadge(channel) {
+    const badge = document.createElement("span");
+    const isTelegram = channel === "telegram";
+    badge.className = `channel-badge channel-badge-${isTelegram ? "telegram" : "browser"}`;
+    badge.textContent = isTelegram ? "Telegram" : "Navegador";
+    return badge;
+}
+
 function renderReminderCard(reminder) {
     const card = document.createElement("article");
     card.className = "reminder-card";
@@ -973,6 +1010,11 @@ function renderReminderCard(reminder) {
     summary.className = "reminder-frequency-label";
     summary.textContent = summarizeSchedule(reminder);
 
+    const channels = reminderChannelsOrDefault(reminder);
+    const channelsRow = document.createElement("div");
+    channelsRow.className = "reminder-channels-row";
+    channels.forEach((channel) => channelsRow.append(reminderChannelBadge(channel)));
+
     const actions = document.createElement("div");
     actions.className = "reminder-actions";
     actions.append(
@@ -980,7 +1022,19 @@ function renderReminderCard(reminder) {
         reminderButton(reminder.active ? "Pausar" : "Ativar", "secondary-button", () => setReminderActive(reminder, !reminder.active)),
         reminderButton("Excluir", "danger-button", () => deleteReminder(reminder.id, reminder.medicationName))
     );
-    card.append(header, summary, actions);
+    card.append(header, summary, channelsRow);
+
+    if (channels.includes("telegram") && telegramLinked === false) {
+        const warning = document.createElement("p");
+        warning.className = "reminder-channel-warning";
+        warning.append(
+            document.createTextNode("Telegram desvinculado: este lembrete não será enviado por lá."),
+            medicationButton("Ir para o Telegram", "text-button", () => setView("telegram"))
+        );
+        card.append(warning);
+    }
+
+    card.append(actions);
     return card;
 }
 
@@ -1054,6 +1108,7 @@ async function loadReminders() {
         renderReminders(data.reminders);
         currentReminderTimezone = data.timezone || DEFAULT_REMINDER_TIME_ZONE;
         currentReminders = data.reminders;
+        remindersDataLoaded = true;
         notificationScheduler?.setReminders(data.reminders);
         updateNextReminderLine();
         return data.reminders;
@@ -1090,6 +1145,10 @@ const notificationInfoButton = document.querySelector("#notification-info-button
 // exibir (ex.: Chrome Android exige Service Worker, iOS exige instalar como app).
 let reminderLoadState = "idle"; // idle | loading | loaded | error | unsupported
 let currentReminders = [];
+// true depois da 1ª vez que /api/reminders respondeu com sucesso nesta sessão: usado só
+// para decidir se o diálogo de desvincular Telegram pode afirmar com certeza que não há
+// lembrete ativo com o canal Telegram (dado carregado) ou precisa do aviso genérico.
+let remindersDataLoaded = false;
 
 // true só enquanto dura a tentativa aberta pelo link "Tentar novamente": ignora o
 // flag salvo e a detecção por user agent por uma vez, mesmo em Android/iPhone/iPad,
@@ -1167,11 +1226,21 @@ function updateNextReminderLine() {
     }
 }
 
+/** "unsupported" é o estado de quando já sabemos (flag salva, falha anterior ou user
+ * agent) que este navegador não entrega notificação de verdade, mesmo com permissão —
+ * diferente de kind === "unsupported" (sem a API Notification) ou "denied" (usuário
+ * negou), que têm sua própria mensagem. Reaproveitado pelo assistente de lembretes
+ * para decidir o canal padrão de um lembrete novo (ver defaultWizardChannels). */
+function isFlaggedNotificationUnsupported() {
+    const kind = permissionKind();
+    return reminderLoadState === "unsupported" && kind !== "insecure" && kind !== "unsupported" && kind !== "denied";
+}
+
 /** Única função que escreve no card: estado sempre consistente, nunca "preso". */
 function renderNotificationCard() {
     const kind = permissionKind();
     const active = kind === "granted" && reminderLoadState === "loaded";
-    const flaggedUnsupported = reminderLoadState === "unsupported" && kind !== "insecure" && kind !== "unsupported" && kind !== "denied";
+    const flaggedUnsupported = isFlaggedNotificationUnsupported();
     notificationCard.classList.toggle("notification-card-enabled", active);
     notificationTestButton.hidden = !active;
     notificationUnsupportedRetry.hidden = !flaggedUnsupported;
@@ -1192,7 +1261,7 @@ function renderNotificationCard() {
         notificationStatus.textContent = "Permissão negada. Para ativar, clique no ícone ao lado do endereço do site e permita notificações.";
     } else if (flaggedUnsupported) {
         notificationButton.hidden = true;
-        notificationStatus.textContent = "Este dispositivo não permite notificações do navegador. Em breve você poderá receber lembretes pelo Telegram.";
+        notificationStatus.textContent = "Este dispositivo não permite notificações do navegador. Você pode receber lembretes pelo Telegram.";
     } else if (kind === "default") {
         notificationButton.hidden = false;
         notificationButton.disabled = false;
@@ -1208,7 +1277,9 @@ function renderNotificationCard() {
         notificationStatus.textContent = "Permissão concedida, mas não foi possível iniciar as notificações agora.";
     } else if (reminderLoadState === "loaded") {
         notificationButton.hidden = true;
-        notificationStatus.textContent = "Notificações ativas";
+        notificationStatus.textContent = (currentReminders.length > 0 && !currentReminders.some(reminderHasBrowserChannel))
+            ? "Notificações ativas, mas nenhum lembrete usa o canal Navegador agora."
+            : "Notificações ativas";
     } else {
         // "idle": permissão já concedida (de uma visita anterior), mas ainda não
         // tentamos carregar os lembretes agora (ex.: antes do login terminar).
@@ -1346,7 +1417,7 @@ notificationTestButton.addEventListener("click", () => {
         notification.onclick = () => { setView("reminders"); notification.close?.(); };
     } catch (error) {
         console.error("Falha ao enviar notificação de teste:", error);
-        showToast("Este dispositivo não permite notificações do navegador. Em breve você poderá receber lembretes pelo Telegram.", "error");
+        showToast("Este dispositivo não permite notificações do navegador. Você pode receber lembretes pelo Telegram.", "error");
         handleNotificationDeliveryUnsupported();
     }
 });
@@ -1445,6 +1516,48 @@ function updateWizardIntervalHint() {
     if (wizardIntervalHours !== null) {
         wizardIntervalHint.textContent = `Os outros horários acompanham o intervalo de ${wizardIntervalHours} em `
             + `${wizardIntervalHours} horas. Para horários livres, escolha "Escolher os horários".`;
+    }
+}
+
+/** Lembrete sem `channels` (API antiga) é tratado como ["browser"], igual ao agendador. */
+function reminderChannelsOrDefault(reminder) {
+    return Array.isArray(reminder?.channels) && reminder.channels.length ? reminder.channels : ["browser"];
+}
+
+/** Padrão para um lembrete novo: "browser", exceto quando este dispositivo já se
+ * provou incapaz de exibir notificação de verdade (ver isFlaggedNotificationUnsupported,
+ * definida mais abaixo) e o Telegram já está vinculado — aí começa só com "telegram". */
+function defaultWizardChannels() {
+    return (isFlaggedNotificationUnsupported() && telegramLinked === true) ? ["telegram"] : ["browser"];
+}
+
+/** Sincroniza os chips de canal com `wizardChannels` e com o vínculo atual do Telegram. */
+function renderWizardChannelChips() {
+    wizardChannelOptions.querySelectorAll(".wizard-chip[data-channel]").forEach((chip) => {
+        const channel = chip.dataset.channel;
+        if (channel === "telegram") {
+            const linked = telegramLinked === true;
+            chip.disabled = !linked;
+            chip.setAttribute("aria-pressed", String(linked && wizardChannels.includes(channel)));
+        } else {
+            chip.setAttribute("aria-pressed", String(wizardChannels.includes(channel)));
+        }
+    });
+    wizardChannelsTelegramHint.hidden = telegramLinked === true;
+}
+
+function clearWizardChannelsError() {
+    wizardChannelsError.hidden = true;
+}
+
+/** Limpa a mensagem de horários (incompletos/duplicados) perto do botão Salvar
+ * assim que `wizardTimes` deixa de ter o problema que a gerou. */
+function clearWizardTimesFeedbackIfResolved() {
+    if (wizardTimesAreComplete(wizardTimes)) {
+        clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.timesIncomplete);
+    }
+    if (wizardTimesHaveNoDuplicates(wizardTimes)) {
+        clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.timesDuplicate);
     }
 }
 
@@ -1589,6 +1702,7 @@ function renderWizardTimeList() {
                 } else {
                     wizardTimes[index] = value;
                 }
+                clearWizardTimesFeedbackIfResolved();
                 updateWizardSummary();
             }
         });
@@ -1604,6 +1718,7 @@ function renderWizardTimeList() {
                 wizardIntervalHours = null;
                 setWizardChipGroupPressed(wizardFrequencyOptions, (candidate) => candidate === wizardChooseTimesButton);
                 renderWizardTimeList();
+                clearWizardTimesFeedbackIfResolved();
                 updateWizardSummary();
             });
             row.append(removeButton);
@@ -1621,7 +1736,7 @@ function updateWizardSummary() {
     const endsOn = wizardDurationMode === "days"
         ? computeEndsOn(wizardStartsOnInput.value || todayLocalDateInput(), Number(wizardDurationDaysInput.value))
         : null;
-    wizardSummary.textContent = summarizeReminder({ medicationName, times: validTimes, weekdays, endsOn, status: "active" });
+    wizardSummary.textContent = summarizeReminder({ medicationName, times: validTimes, weekdays, endsOn, status: "active", channels: wizardChannels });
 }
 
 /**
@@ -1633,6 +1748,7 @@ function setStartsOnIso(iso) {
     wizardStartsOnDisplay.value = iso ? formatDateBr(iso) : "";
     wizardStartsOnDisplay.classList.remove("input-error");
     wizardStartsOnError.hidden = true;
+    clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.startsOn);
 }
 
 /** Ao sair do campo (blur) ou Enter: preenche buracos da edição ("2_/10/2026" ->
@@ -1643,6 +1759,7 @@ function commitStartsOnDisplay() {
         wizardStartsOnInput.value = "";
         wizardStartsOnDisplay.classList.remove("input-error");
         wizardStartsOnError.hidden = true;
+        clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.startsOn);
         updateWizardSummary();
         return;
     }
@@ -1656,6 +1773,7 @@ function commitStartsOnDisplay() {
     wizardStartsOnInput.value = brDateToIso(normalized);
     wizardStartsOnDisplay.classList.remove("input-error");
     wizardStartsOnError.hidden = true;
+    clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.startsOn);
     updateWizardSummary();
 }
 
@@ -1666,10 +1784,13 @@ function resetReminderWizard() {
     wizardDayMode = "all";
     wizardWeekdays = [];
     wizardDurationMode = "forever";
+    wizardChannels = defaultWizardChannels();
     reminderWizardForm.reset();
     wizardMedicationInput.value = "";
     populateReminderMedicationOptions();
     renderWizardTimeList();
+    renderWizardChannelChips();
+    clearWizardChannelsError();
     setWizardChipGroupPressed(wizardFrequencyOptions, () => false);
     setWizardChipGroupPressed(wizardDayModeOptions, (chip) => chip.dataset.dayMode === "all");
     wizardWeekdayList.hidden = true;
@@ -1693,9 +1814,12 @@ function fillWizardForEdit(reminder) {
     wizardDayMode = reminder.weekdays.length ? "custom" : "all";
     wizardWeekdays = [...reminder.weekdays];
     wizardDurationMode = reminder.endsOn ? "days" : "forever";
+    wizardChannels = reminderChannelsOrDefault(reminder);
 
     wizardMedicationInput.value = String(reminder.medicationId);
     renderWizardTimeList();
+    renderWizardChannelChips();
+    clearWizardChannelsError();
     setWizardChipGroupPressed(wizardFrequencyOptions, (chip) => chip === wizardChooseTimesButton);
     setWizardChipGroupPressed(wizardDayModeOptions, (chip) => chip.dataset.dayMode === wizardDayMode);
     wizardWeekdayList.hidden = wizardDayMode !== "custom";
@@ -1737,7 +1861,13 @@ reminderWizardToggle.addEventListener("click", () => {
 });
 
 wizardCancelButton.addEventListener("click", () => resetReminderWizard());
-wizardMedicationInput.addEventListener("change", updateWizardSummary);
+wizardMedicationInput.addEventListener("change", () => {
+    if (wizardMedicationInput.value) {
+        wizardMedicationInput.classList.remove("input-error");
+        clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.medication);
+    }
+    updateWizardSummary();
+});
 
 wizardFrequencyOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
     chip.addEventListener("click", () => {
@@ -1755,6 +1885,7 @@ wizardFrequencyOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
         }
         renderWizardTimeList();
         setWizardChipGroupPressed(wizardFrequencyOptions, (candidate) => candidate === chip);
+        clearWizardTimesFeedbackIfResolved();
         updateWizardSummary();
     });
 });
@@ -1792,6 +1923,22 @@ wizardWeekdayList.querySelectorAll(".wizard-weekday").forEach((chip) => {
     });
 });
 
+wizardChannelOptions.querySelectorAll(".wizard-chip[data-channel]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+        if (chip.disabled) return;
+        const channel = chip.dataset.channel;
+        wizardChannels = wizardChannels.includes(channel)
+            ? wizardChannels.filter((candidate) => candidate !== channel)
+            : [...wizardChannels, channel];
+        renderWizardChannelChips();
+        clearWizardChannelsError();
+        if (wizardChannels.length) clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.channels);
+        updateWizardSummary();
+    });
+});
+
+wizardChannelsTelegramLink.addEventListener("click", () => setView("telegram"));
+
 wizardDurationModeOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
     chip.addEventListener("click", () => {
         wizardDurationMode = chip.dataset.durationMode;
@@ -1799,12 +1946,22 @@ wizardDurationModeOptions.querySelectorAll(".wizard-chip").forEach((chip) => {
         if (wizardDurationMode === "days" && !wizardStartsOnInput.value) {
             setStartsOnIso(todayLocalDateInput());
         }
+        if (wizardDurationMode !== "days") {
+            clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.startsOn);
+            clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.durationDays);
+        }
         setWizardChipGroupPressed(wizardDurationModeOptions, (candidate) => candidate === chip);
         updateWizardSummary();
     });
 });
 
-wizardDurationDaysInput.addEventListener("input", updateWizardSummary);
+wizardDurationDaysInput.addEventListener("input", () => {
+    const totalDays = Number(wizardDurationDaysInput.value);
+    if (Number.isInteger(totalDays) && totalDays >= 1) {
+        clearWizardFeedbackIfShowing(WIZARD_FEEDBACK_MESSAGES.durationDays);
+    }
+    updateWizardSummary();
+});
 
 wireFixedPositionEditing(wizardStartsOnDisplay, editDateField, () => {
     wizardStartsOnDisplay.classList.remove("input-error");
@@ -1853,30 +2010,36 @@ reminderWizardForm.addEventListener("submit", async (event) => {
 
     wizardMedicationInput.classList.toggle("input-error", !medicationId);
     if (!medicationId) {
-        setReminderFeedback("Selecione o medicamento deste lembrete.", "error");
+        setReminderFeedback(WIZARD_FEEDBACK_MESSAGES.medication, "error");
         return;
     }
     if (!times.length || times.length !== wizardTimes.length) {
-        setReminderFeedback("Preencha todos os horários (ou remova os que ficaram em branco).", "error");
+        setReminderFeedback(WIZARD_FEEDBACK_MESSAGES.timesIncomplete, "error");
         return;
     }
     if (uniqueTimes.size !== times.length) {
-        setReminderFeedback("Os horários não podem se repetir.", "error");
+        setReminderFeedback(WIZARD_FEEDBACK_MESSAGES.timesDuplicate, "error");
         return;
     }
+    if (!wizardChannels.length) {
+        wizardChannelsError.hidden = false;
+        setReminderFeedback(WIZARD_FEEDBACK_MESSAGES.channels, "error");
+        return;
+    }
+    wizardChannelsError.hidden = true;
 
-    const payload = { medicationId: Number(medicationId), times, weekdays, active: true };
+    const payload = { medicationId: Number(medicationId), times, weekdays, active: true, channels: wizardChannels };
     if (wizardDurationMode === "days") {
         commitStartsOnDisplay();
         if (wizardStartsOnDisplay.classList.contains("input-error")) {
-            setReminderFeedback("Informe uma data de início válida (DD/MM/AAAA).", "error");
+            setReminderFeedback(WIZARD_FEEDBACK_MESSAGES.startsOn, "error");
             return;
         }
         const startsOn = wizardStartsOnInput.value || todayLocalDateInput();
         const totalDays = Number(wizardDurationDaysInput.value);
         const endsOn = computeEndsOn(startsOn, totalDays);
         if (!endsOn) {
-            setReminderFeedback("Informe por quantos dias o lembrete deve continuar (1 ou mais).", "error");
+            setReminderFeedback(WIZARD_FEEDBACK_MESSAGES.durationDays, "error");
             return;
         }
         payload.startsOn = startsOn;
@@ -2063,6 +2226,7 @@ function restoreTelegramCodeFromStorage() {
 function renderTelegramLinked(linked) {
     telegramLinked = linked;
     updateChatTelegramHintVisibility();
+    renderWizardChannelChips();
     telegramStatus.dataset.state = linked ? "linked" : "";
     telegramStatus.textContent = linked
         ? "Telegram conectado. Você já pode enviar perguntas sobre bulas pelo bot."
@@ -2126,13 +2290,19 @@ async function refreshTelegramLinkStatus() {
         if (!response.ok) throw new Error("request-failed");
         const data = await response.json();
         renderTelegramLinked(Boolean(data?.user?.telegramLinked));
+        if (remindersDataLoaded) loadReminders();
     } catch {
         telegramStatus.textContent = "Não foi possível verificar o status do vínculo. Tente novamente.";
     }
 }
 
 async function disconnectTelegram() {
-    const confirmed = await confirmDialog("Desvincular o Telegram desta conta?", {
+    const willAffectTelegramReminders = !remindersDataLoaded
+        || currentReminders.some((reminder) => reminder.active && reminderChannelsOrDefault(reminder).includes("telegram"));
+    const message = willAffectTelegramReminders
+        ? "Desvincular o Telegram desta conta? Lembretes com o canal Telegram deixarão de ser enviados por lá."
+        : "Desvincular o Telegram desta conta?";
+    const confirmed = await confirmDialog(message, {
         title: "Desvincular Telegram", confirmLabel: "Desvincular"
     });
     if (!confirmed) return;
@@ -2144,6 +2314,7 @@ async function disconnectTelegram() {
         telegramCountdown.stop();
         clearStoredTelegramLinkCode();
         track("telegram_unlinked");
+        if (remindersDataLoaded) loadReminders();
     } catch (error) {
         telegramStatus.textContent = error instanceof Error ? error.message : "Não foi possível desvincular o Telegram.";
     } finally {
@@ -2400,6 +2571,7 @@ sidebarToggle.addEventListener("click", () => {
     sidebarToggle.setAttribute("aria-label", collapsed ? "Expandir menu" : "Recolher menu");
 });
 document.querySelector("#mobile-menu").addEventListener("click", () => document.querySelector("#sidebar").classList.toggle("mobile-open"));
+document.querySelector("#sidebar-brand-link").addEventListener("click", () => setView("chat"));
 
 document.querySelector("#show-register").addEventListener("click", showRegister);
 document.querySelector("#show-login").addEventListener("click", () => showLogin());

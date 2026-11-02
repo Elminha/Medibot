@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import {
     clearNotificationsUnsupportedFlag,
     DEFAULT_REMINDER_TIME_ZONE,
@@ -10,6 +13,7 @@ import {
     getTimezoneParts,
     isLikelyUnsupportedNotificationUserAgent,
     readNotificationsUnsupportedFlag,
+    reminderHasBrowserChannel,
     ReminderNotificationScheduler,
     startReminderSchedulerIfAllowed,
     writeNotificationsUnsupportedFlag
@@ -17,6 +21,24 @@ import {
 
 const active = (id, times, overrides = {}) => ({
     id, times, weekdays: [], startsOn: null, endsOn: null, active: true, ...overrides
+});
+
+// Mesmas fixtures usadas por tests/reminderOccurrences.test.ts (lado do servidor, em
+// TypeScript) contra getReminderOccurrences deste arquivo (lado do navegador): as duas
+// implementações são portas manuais uma da outra (ver comentário no topo de
+// src/services/reminderOccurrences.ts) e precisam continuar concordando em cada caso.
+const fixturesPath = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "fixtures",
+    "reminderOccurrences.json"
+);
+const sharedOccurrenceFixtures = JSON.parse(readFileSync(fixturesPath, "utf8"));
+
+test("fixtures compartilhadas com o lado TypeScript: getReminderOccurrences (lado navegador)", () => {
+    for (const fixture of sharedOccurrenceFixtures) {
+        const result = getReminderOccurrences(fixture.reminder, new Date(fixture.date), fixture.timezone);
+        assert.deepEqual(result, fixture.expected, fixture.description);
+    }
 });
 
 test("interpreta horário e dia no fuso informado, não no fuso do dispositivo", () => {
@@ -454,6 +476,55 @@ test("flag de notificações sem suporte não lança com localStorage indisponí
     assert.doesNotThrow(() => clearNotificationsUnsupportedFlag(throwingStorage));
     assert.equal(readNotificationsUnsupportedFlag(null), false, "sem storage nenhum (ex.: window.localStorage indisponível)");
     assert.doesNotThrow(() => writeNotificationsUnsupportedFlag(undefined));
+});
+
+// ===== Canal "browser" (Fase 2 do Telegram): só lembrete com o canal certo notifica =====
+
+test("reminderHasBrowserChannel: sem channels (API antiga/cache) é tratado como [\"browser\"]", () => {
+    assert.equal(reminderHasBrowserChannel(active(1, ["08:00"])), true);
+    assert.equal(reminderHasBrowserChannel(active(1, ["08:00"], { channels: ["browser"] })), true);
+    assert.equal(reminderHasBrowserChannel(active(1, ["08:00"], { channels: ["browser", "telegram"] })), true);
+    assert.equal(reminderHasBrowserChannel(active(1, ["08:00"], { channels: ["telegram"] })), false);
+    assert.equal(reminderHasBrowserChannel(active(1, ["08:00"], { channels: [] })), false);
+});
+
+test("lembrete só com o canal telegram não gera notificação do navegador", () => {
+    let now = new Date("2024-01-08T13:29:50.000Z");
+    const notifications = [];
+    class MockNotification { constructor(_title, options) { notifications.push(options); } }
+    const scheduler = new ReminderNotificationScheduler({
+        userId: 1, notification: MockNotification, storage: null, onNavigate() {}, now: () => now, setIntervalFn: () => 1, clearIntervalFn() {}
+    });
+    scheduler.setReminders([active(9, ["10:30"], { channels: ["telegram"] })]);
+    now = new Date("2024-01-08T13:30:03.000Z");
+    scheduler.check();
+    assert.equal(notifications.length, 0);
+    scheduler.stop();
+});
+
+test("lembrete com os dois canais continua notificando normalmente pelo navegador", () => {
+    let now = new Date("2024-01-08T13:29:50.000Z");
+    const notifications = [];
+    class MockNotification { constructor(_title, options) { notifications.push(options); } }
+    const scheduler = new ReminderNotificationScheduler({
+        userId: 1, notification: MockNotification, storage: null, onNavigate() {}, now: () => now, setIntervalFn: () => 1, clearIntervalFn() {}
+    });
+    scheduler.setReminders([active(9, ["10:30"], { channels: ["browser", "telegram"] })]);
+    now = new Date("2024-01-08T13:30:03.000Z");
+    scheduler.check();
+    assert.equal(notifications.length, 1);
+    scheduler.stop();
+});
+
+test("getNextOccurrence ignora lembretes só com o canal telegram, mesmo sendo a próxima ocorrência", () => {
+    const now = new Date("2024-01-08T23:50:00.000Z");
+    const telegramOnly = active(3, ["02:59"], { medicationName: "Nimesulida", channels: ["telegram"] });
+    assert.equal(getNextOccurrence([telegramOnly], now, DEFAULT_REMINDER_TIME_ZONE), null);
+
+    const browserAlso = active(4, ["03:15"], { medicationName: "Dipirona", channels: ["browser", "telegram"] });
+    const next = getNextOccurrence([telegramOnly, browserAlso], now, DEFAULT_REMINDER_TIME_ZONE);
+    assert.ok(next);
+    assert.equal(next.medicationName, "Dipirona");
 });
 
 test("carregamento requer token e consulta apenas o endpoint do usuário autenticado", async () => {

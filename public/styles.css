@@ -118,7 +118,7 @@ textarea { resize: vertical; }
 .primary-button:focus-visible, .secondary-button:focus-visible, .danger-button:focus-visible,
 .icon-button:focus-visible, .nav-button:focus-visible, .text-button:focus-visible,
 .history-item:focus-visible, select:focus-visible, .theme-toggle:focus-visible,
-.new-chat-button:focus-visible, .suggestions button:focus-visible {
+.new-chat-button:focus-visible, .suggestions button:focus-visible, .sidebar-brand-link:focus-visible {
     outline: 2px solid var(--primary); outline-offset: 2px;
 }
 
@@ -147,8 +147,7 @@ textarea { resize: vertical; }
 .auth-shell { display: grid; min-height: 100vh; place-items: center; padding: 24px; background: radial-gradient(ellipse at 50% 0%, var(--primary-soft) 0%, var(--bg) 55%); }
 .auth-card { width: min(100%, 440px); border: 1px solid var(--border-soft); border-radius: var(--radius-xl); background: var(--surface); box-shadow: var(--shadow-lg); padding: 36px; }
 .brand-lockup { display: flex; align-items: center; gap: 10px; color: var(--primary); font-size: 1.2rem; font-weight: 750; }
-.brand-lockup .brand-mark { width: 38px; height: 38px; font-size: 26px; }
-.brand-mark { display: grid; width: 42px; height: 42px; place-items: center; border-radius: var(--radius-md); background: var(--primary); color: var(--on-primary); font-size: 28px; font-weight: 600; }
+.brand-mark { display: block; flex: none; width: 42px; height: 42px; border-radius: var(--radius-md); object-fit: cover; }
 .auth-card h1 { margin: 28px 0 8px; color: var(--text); font-size: 1.55rem; }
 .auth-description { margin: 0; color: var(--text-muted); line-height: 1.55; }
 .auth-form { display: grid; gap: 16px; margin-top: 26px; }
@@ -166,7 +165,9 @@ textarea { resize: vertical; }
 .app-shell { width: 100%; height: 100dvh; min-height: 560px; padding: 0; margin: 0; display: flex; overflow: hidden; }
 .sidebar { width: 268px; flex: 0 0 268px; display: flex; flex-direction: column; gap: var(--space-5); padding: 18px 14px 14px; background: var(--surface-2); border-right: 1px solid var(--border); transition: width var(--transition), padding var(--transition), background var(--transition), border-color var(--transition); }
 .sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0 4px; color: var(--primary); font-size: 1.05rem; font-weight: 750; }
-.sidebar-brand .brand-mark { width: 34px; height: 34px; border-radius: 11px; font-size: 22px; }
+.sidebar-brand .brand-mark { width: 40px; height: 40px; border-radius: 11px; }
+.sidebar-brand-link { display: flex; align-items: center; gap: 10px; min-width: 0; border: 0; background: transparent; padding: 2px; margin: -2px; border-radius: var(--radius-sm); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background var(--transition); }
+.sidebar-brand-link:hover { background: var(--surface-hover); }
 .sidebar-toggle { margin-left: auto; }
 .new-chat-button { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 13px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--text); cursor: pointer; font-weight: 650; transition: border-color var(--transition), background var(--transition); }
 .new-chat-button:hover { border-color: var(--primary); background: var(--primary-soft); }
@@ -190,10 +191,9 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .sidebar-privacy-link:hover { color: var(--primary); text-decoration: underline; }
 
 .sidebar.collapsed { width: 76px; flex-basis: 76px; padding-right: 10px; padding-left: 10px; }
-.sidebar.collapsed .sidebar-brand > span, .sidebar.collapsed .new-chat-button > span:last-child, .sidebar.collapsed .nav-button > span:last-child, .sidebar.collapsed .theme-toggle-label, .sidebar.collapsed .sidebar-account > span:nth-child(2), .sidebar.collapsed .sidebar-privacy-link { display: none; }
+.sidebar.collapsed .sidebar-brand-link, .sidebar.collapsed .new-chat-button > span:last-child, .sidebar.collapsed .nav-button > span:last-child, .sidebar.collapsed .theme-toggle-label, .sidebar.collapsed .sidebar-account > span:nth-child(2), .sidebar.collapsed .sidebar-privacy-link { display: none; }
 .sidebar.collapsed .new-chat-button, .sidebar.collapsed .nav-button, .sidebar.collapsed .theme-toggle { justify-content: center; padding: 0; }
 .sidebar.collapsed .sidebar-brand { justify-content: center; }
-.sidebar.collapsed .sidebar-brand .brand-mark { display: none; }
 .sidebar.collapsed .sidebar-toggle { margin: 0; }
 
 /* ===== Main / header ===== */
@@ -566,8 +566,8 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
     .sidebar { position: fixed; z-index: 10; top: 0; bottom: 0; left: 0; width: min(290px, 84vw); transform: translateX(-105%); box-shadow: none; transition: transform .2s; }
     .sidebar.collapsed { width: min(290px, 84vw); flex-basis: auto; padding: 18px 14px 14px; }
     .sidebar.collapsed .sidebar-brand { justify-content: flex-start; }
-    .sidebar.collapsed .sidebar-brand > span, .sidebar.collapsed .new-chat-button > span:last-child, .sidebar.collapsed .nav-button > span:last-child, .sidebar.collapsed .theme-toggle-label, .sidebar.collapsed .sidebar-account > span:nth-child(2), .sidebar.collapsed .sidebar-privacy-link { display: revert; }
-    .sidebar.collapsed .sidebar-brand .brand-mark { display: grid; }
+    .sidebar.collapsed .sidebar-brand-link { display: flex; }
+    .sidebar.collapsed .new-chat-button > span:last-child, .sidebar.collapsed .nav-button > span:last-child, .sidebar.collapsed .theme-toggle-label, .sidebar.collapsed .sidebar-account > span:nth-child(2), .sidebar.collapsed .sidebar-privacy-link { display: revert; }
     .sidebar.collapsed .new-chat-button, .sidebar.collapsed .nav-button, .sidebar.collapsed .theme-toggle { justify-content: flex-start; padding: 0 12px; }
     .sidebar.mobile-open { transform: translateX(0); box-shadow: 10px 0 40px rgba(0, 0, 0, .25); }
     .sidebar-toggle { display: none; }
@@ -663,3 +663,10 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 
 /* ===== Dica do modo "de X em X horas" ===== */
 .wizard-hint { margin: 2px 0 0; color: var(--text-muted); font-size: .78rem; line-height: 1.4; }
+.wizard-hint .text-button { margin-left: 4px; font-size: inherit; font-weight: 700; }
+
+/* ===== Canais de cada lembrete (lista "Meus lembretes") ===== */
+.reminder-channels-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.channel-badge-browser { background: var(--surface-2); color: var(--text-muted); }
+.reminder-channel-warning { margin: 8px 0 0; color: var(--text-muted); font-size: .8rem; line-height: 1.4; }
+.reminder-channel-warning .text-button { margin-left: 4px; font-size: inherit; font-weight: 700; }

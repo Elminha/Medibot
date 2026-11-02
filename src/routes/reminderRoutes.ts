@@ -1,6 +1,7 @@
 import { Router, type Response } from "express";
 import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
 import { MedicationNotFoundError } from "../services/medicationService.js";
+import { isReminderChannel, TelegramChannelRequiresLinkError, type ReminderChannel } from "../services/reminderChannelService.js";
 import {
     createReminder,
     deleteReminder,
@@ -88,6 +89,22 @@ function parseWeekdays(value: unknown): number[] | undefined {
     return value as number[];
 }
 
+function parseChannels(value: unknown): ReminderChannel[] | undefined {
+    if (!Array.isArray(value) || value.length < 1) {
+        return undefined;
+    }
+
+    if (!value.every(isReminderChannel)) {
+        return undefined;
+    }
+
+    if (new Set(value).size !== value.length) {
+        return undefined;
+    }
+
+    return value as ReminderChannel[];
+}
+
 function parseEndsOn(value: unknown): string | null | undefined {
     if (value === null) {
         return null;
@@ -101,7 +118,7 @@ function validateReminderInput(body: unknown): ReminderInput | undefined {
         return undefined;
     }
 
-    const { medicationId, times, weekdays, startsOn, endsOn, active } = body as Record<string, unknown>;
+    const { medicationId, times, weekdays, startsOn, endsOn, active, channels } = body as Record<string, unknown>;
     const validMedicationId = parsePositiveInteger(medicationId);
     const validTimes = parseTimes(times);
     const validWeekdays = weekdays === undefined ? [] : parseWeekdays(weekdays);
@@ -126,13 +143,22 @@ function validateReminderInput(body: unknown): ReminderInput | undefined {
         return undefined;
     }
 
+    let validChannels: ReminderChannel[] | undefined;
+    if (channels !== undefined) {
+        validChannels = parseChannels(channels);
+        if (!validChannels) {
+            return undefined;
+        }
+    }
+
     return {
         medicationId: validMedicationId,
         times: validTimes,
         weekdays: validWeekdays,
         startsOn: startsOn as string | undefined,
         endsOn: validEndsOn,
-        active: active as boolean | undefined
+        active: active as boolean | undefined,
+        channels: validChannels
     };
 }
 
@@ -141,9 +167,9 @@ function validateReminderUpdate(body: unknown): ReminderUpdateInput | undefined 
         return undefined;
     }
 
-    const { medicationId, times, weekdays, startsOn, endsOn, active } = body as Record<string, unknown>;
+    const { medicationId, times, weekdays, startsOn, endsOn, active, channels } = body as Record<string, unknown>;
     const hasUpdate = medicationId !== undefined || times !== undefined || weekdays !== undefined
-        || startsOn !== undefined || endsOn !== undefined || active !== undefined;
+        || startsOn !== undefined || endsOn !== undefined || active !== undefined || channels !== undefined;
 
     if (!hasUpdate) {
         return undefined;
@@ -185,13 +211,22 @@ function validateReminderUpdate(body: unknown): ReminderUpdateInput | undefined 
         return undefined;
     }
 
+    let validChannels: ReminderChannel[] | undefined;
+    if (channels !== undefined) {
+        validChannels = parseChannels(channels);
+        if (!validChannels) {
+            return undefined;
+        }
+    }
+
     return {
         medicationId: medicationId as number | undefined,
         times: validTimes,
         weekdays: validWeekdays,
         startsOn: startsOn as string | undefined,
         endsOn: validEndsOn,
-        active: active as boolean | undefined
+        active: active as boolean | undefined,
+        channels: validChannels
     };
 }
 
@@ -203,6 +238,10 @@ function isCheckViolation(error: unknown): boolean {
 function sendError(response: Response, error: unknown): Response | undefined {
     if (error instanceof ReminderNotFoundError || error instanceof MedicationNotFoundError) {
         return response.status(404).json({ error: error.message });
+    }
+
+    if (error instanceof TelegramChannelRequiresLinkError) {
+        return response.status(400).json({ error: error.message });
     }
 
     if (isCheckViolation(error)) {

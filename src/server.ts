@@ -7,6 +7,7 @@ import medicationRoutes from "./routes/medicationRoutes.js";
 import queryHistoryRoutes from "./routes/queryHistoryRoutes.js";
 import reminderRoutes from "./routes/reminderRoutes.js";
 import telegramRoutes from "./routes/telegramRoutes.js";
+import internalReminderDispatchRoutes from "./routes/internalReminderDispatchRoutes.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
@@ -34,6 +35,9 @@ app.use("/api/medications", medicationRoutes);
 app.use("/api/reminders", reminderRoutes);
 app.use("/api/queries", queryHistoryRoutes);
 app.use("/api/telegram", telegramRoutes);
+// Sem autenticação de usuário: protegida só pelo segredo CRON_SECRET (ver
+// internalReminderDispatchRoutes.ts). Chamada pelo pg_cron/pg_net do Supabase.
+app.use("/api/internal/reminders", internalReminderDispatchRoutes);
 
 if (!process.env.VERCEL) {
     app.listen(port, () => {

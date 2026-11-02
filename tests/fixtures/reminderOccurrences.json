@@ -1,0 +1,124 @@
+[
+    {
+        "description": "ativo, horário simples, dentro da vigência",
+        "reminder": { "id": 1, "active": true, "times": ["08:00"], "weekdays": [], "startsOn": null, "endsOn": null },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": [{ "key": "1:2024-01-10T08:00", "at": 1704884400000 }]
+    },
+    {
+        "description": "inativo (active=false) não gera nenhuma ocorrência",
+        "reminder": { "id": 2, "active": false, "times": ["08:00"], "weekdays": [], "startsOn": null, "endsOn": null },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": []
+    },
+    {
+        "description": "sem weekdays definido = todos os dias (quarta-feira, 2024-01-10)",
+        "reminder": { "id": 3, "active": true, "times": ["08:00"], "weekdays": [], "startsOn": null, "endsOn": null },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": [{ "key": "3:2024-01-10T08:00", "at": 1704884400000 }]
+    },
+    {
+        "description": "weekday não corresponde ao dia atual (só segunda, mas é quarta)",
+        "reminder": { "id": 4, "active": true, "times": ["08:00"], "weekdays": [1], "startsOn": null, "endsOn": null },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": []
+    },
+    {
+        "description": "weekday corresponde ao dia atual (quarta=3)",
+        "reminder": { "id": 5, "active": true, "times": ["08:00"], "weekdays": [3], "startsOn": null, "endsOn": null },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": [{ "key": "5:2024-01-10T08:00", "at": 1704884400000 }]
+    },
+    {
+        "description": "antes de startsOn",
+        "reminder": { "id": 6, "active": true, "times": ["08:00"], "weekdays": [], "startsOn": "2024-02-01", "endsOn": null },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": []
+    },
+    {
+        "description": "exatamente em startsOn (inclusivo)",
+        "reminder": { "id": 7, "active": true, "times": ["08:00"], "weekdays": [], "startsOn": "2024-01-10", "endsOn": null },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": [{ "key": "7:2024-01-10T08:00", "at": 1704884400000 }]
+    },
+    {
+        "description": "depois de endsOn",
+        "reminder": { "id": 8, "active": true, "times": ["08:00"], "weekdays": [], "startsOn": null, "endsOn": "2024-01-05" },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": []
+    },
+    {
+        "description": "exatamente em endsOn (inclusivo)",
+        "reminder": { "id": 9, "active": true, "times": ["08:00"], "weekdays": [], "startsOn": null, "endsOn": "2024-01-10" },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": [{ "key": "9:2024-01-10T08:00", "at": 1704884400000 }]
+    },
+    {
+        "description": "múltiplos horários no mesmo dia geram uma ocorrência cada",
+        "reminder": { "id": 10, "active": true, "times": ["08:00", "20:00"], "weekdays": [], "startsOn": null, "endsOn": null },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": [
+            { "key": "10:2024-01-10T08:00", "at": 1704884400000 },
+            { "key": "10:2024-01-10T20:00", "at": 1704927600000 }
+        ]
+    },
+    {
+        "description": "horário duplicado é deduplicado",
+        "reminder": { "id": 11, "active": true, "times": ["08:00", "08:00"], "weekdays": [], "startsOn": null, "endsOn": null },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": [{ "key": "11:2024-01-10T08:00", "at": 1704884400000 }]
+    },
+    {
+        "description": "virada de meia-noite: horário 23:30 local cai no dia UTC seguinte, mas a ocorrência pertence ao dia local de `date`",
+        "reminder": { "id": 12, "active": true, "times": ["23:30"], "weekdays": [], "startsOn": null, "endsOn": null },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": [{ "key": "12:2024-01-10T23:30", "at": 1704940200000 }]
+    },
+    {
+        "description": "horário inválido na lista é ignorado, válidos continuam valendo",
+        "reminder": { "id": 13, "active": true, "times": ["08:00", "25:99"], "weekdays": [], "startsOn": null, "endsOn": null },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": [{ "key": "13:2024-01-10T08:00", "at": 1704884400000 }]
+    },
+    {
+        "description": "startsOn null não restringe o passado",
+        "reminder": { "id": 14, "active": true, "times": ["08:00"], "weekdays": [], "startsOn": null, "endsOn": null },
+        "date": "2020-06-01T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": [{ "key": "14:2020-06-01T08:00", "at": 1591009200000 }]
+    },
+    {
+        "description": "endsOn null não restringe o futuro",
+        "reminder": { "id": 15, "active": true, "times": ["08:00"], "weekdays": [], "startsOn": null, "endsOn": null },
+        "date": "2030-06-01T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": [{ "key": "15:2030-06-01T08:00", "at": 1906542000000 }]
+    },
+    {
+        "description": "id inválido (não inteiro seguro) não gera ocorrência",
+        "reminder": { "id": "abc", "active": true, "times": ["08:00"], "weekdays": [], "startsOn": null, "endsOn": null },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": []
+    },
+    {
+        "description": "lista de horários vazia não gera ocorrência",
+        "reminder": { "id": 16, "active": true, "times": [], "weekdays": [], "startsOn": null, "endsOn": null },
+        "date": "2024-01-10T15:00:00.000Z",
+        "timezone": "America/Sao_Paulo",
+        "expected": []
+    }
+]
