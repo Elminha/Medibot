@@ -1,0 +1,122 @@
+[
+  {
+    "filename": "bula_amoxicilina.pdf",
+    "sha256": "f004593633165f8a5ec5e3798e0ea8a62037d1b3eb3f95e9dd054f49b82d3a51",
+    "uploadedAt": "2026-11-04T04:01:56.471Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_azitromicina.pdf",
+    "sha256": "f3c20f848168bf505201d5aefe6258a23613524fb9b6361b4155473f23182a15",
+    "uploadedAt": "2026-11-04T04:01:56.473Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_cetoprofeno.pdf",
+    "sha256": "45ded63e313c1aa589187ffe7a60e78d2d965af4635304ab313a570db2549161",
+    "uploadedAt": "2026-11-04T04:01:56.482Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_clonazepam.pdf",
+    "sha256": "b385e66f7ac11c5e505d9ebbc086f7cca94ae096ab35ea7e906bbd385514ee94",
+    "uploadedAt": "2026-11-04T04:01:56.483Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_cloridrato_de_fluoxetina.pdf",
+    "sha256": "1903a73b8b1e725ebef26822f97c7900424b3f3b62da48b2289c8b0e1093ea54",
+    "uploadedAt": "2026-11-04T04:01:56.485Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_cloridrato_de_nafazolina.pdf",
+    "sha256": "719693249d4417474037c053199cd982cdc32acae37569f63721fb3bd2a6109f",
+    "uploadedAt": "2026-11-04T04:01:56.487Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_dipirona.pdf",
+    "sha256": "a34247c9d21e75acaaac143749614b1c4763f48bbb545043bdd52d611c517a41",
+    "uploadedAt": "2026-11-04T04:01:56.488Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_domperidona.pdf",
+    "sha256": "59930d1e5b6cd178bd7753b58a5d12b121adff128047c6787c482cc9ad69f4e3",
+    "uploadedAt": "2026-11-04T04:01:56.489Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_hidroclorotiazida.pdf",
+    "sha256": "688791db3755ee3c12a59081f885bd9fd2544960600de19b18e565647c205986",
+    "uploadedAt": "2026-11-04T04:01:56.491Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_ibuprofeno.pdf",
+    "sha256": "e47ef0048c90e15b17cdee3c7465e984da906b176c9943317b709962b716f893",
+    "uploadedAt": "2026-11-04T04:01:56.493Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_loratadina.pdf",
+    "sha256": "6111baf20377c6697ee131137c4fc5a1c3d573ccdb8c54dad3908cc5f85be953",
+    "uploadedAt": "2026-11-04T04:01:56.495Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_losartana_potassica.pdf",
+    "sha256": "8d11daddf4893125bd886d63ce9c7608c467aac7127c43d5aa9e1198f2579da6",
+    "uploadedAt": "2026-11-04T04:01:56.497Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_maleato_de_enalapril.pdf",
+    "sha256": "53b9ba6459b1cf273dcd500476819229aaf80ae33c023d733f788423bbee6d31",
+    "uploadedAt": "2026-11-04T04:01:56.498Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_nimesulida.pdf",
+    "sha256": "81ee9b92f6a599802d815cb2b39faffdadfff68ec6e0667eba7629175fa87310",
+    "uploadedAt": "2026-11-04T04:01:56.500Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_omeprazol.pdf",
+    "sha256": "18d9d87954aef419b4ced74ad2c2ee9de67d41b22085d493676dc7afa5bb7eda",
+    "uploadedAt": "2026-11-04T04:01:56.501Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_pamelor.pdf",
+    "sha256": "ff21e23652ff4ecf195446b3ab5542018e77230e17d9c56d09d3681305905607",
+    "uploadedAt": "2026-11-04T04:01:56.503Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_pantoprazol.pdf",
+    "sha256": "4d14196dc076f108e10ed9b6b2686c692970f5e89f6d432aa17ff37cfe7eb51a",
+    "uploadedAt": "2026-11-04T04:01:56.505Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_paracetamol.pdf",
+    "sha256": "880a41737adf4074c1812fbf3d43fd5d2f15cbaf6f3e0b008a71e2b0fae5186b",
+    "uploadedAt": "2026-11-04T04:01:56.506Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_simeticona_+_metilbrometo_de_homatropina.pdf",
+    "sha256": "2d24728b195c3d83b16bf31af0cacdd2e68a45f5d42cc35197030d89ff2d568b",
+    "uploadedAt": "2026-11-04T04:01:56.507Z",
+    "origin": "legado"
+  },
+  {
+    "filename": "bula_viagra.pdf",
+    "sha256": "b1384be4340040e3a1214571b7606094d7bbc55bfa6de843af47b9fabcf2132c",
+    "uploadedAt": "2026-11-04T04:01:56.510Z",
+    "origin": "legado"
+  }
+]
