@@ -473,7 +473,6 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .wizard-chip:disabled { cursor: not-allowed; color: var(--text-muted); opacity: .7; }
 .wizard-chip:disabled:hover { border-color: var(--border); background: var(--surface); }
 .wizard-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.wizard-soon { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
 
 .wizard-time-list { display: flex; flex-wrap: wrap; gap: 10px; }
 .wizard-time-row { display: inline-flex; align-items: flex-start; gap: 6px; }
@@ -670,3 +669,60 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .channel-badge-browser { background: var(--surface-2); color: var(--text-muted); }
 .reminder-channel-warning { margin: 8px 0 0; color: var(--text-muted); font-size: .8rem; line-height: 1.4; }
 .reminder-channel-warning .text-button { margin-left: 4px; font-size: inherit; font-weight: 700; }
+
+/* ===== Botão flutuante de feedback =====
+   bottom offset igual ao do cookie-banner: limpa a caixa de digitar do chat (~86-90px
+   de altura incl. margem) em qualquer largura de tela, sem precisar de media query. */
+.feedback-fab {
+    position: fixed; z-index: 140; right: 20px; bottom: 112px;
+    width: 48px; height: 48px; display: grid; place-items: center;
+    border: 0; border-radius: 50%; background: var(--primary); color: var(--on-primary);
+    box-shadow: var(--shadow-md); cursor: pointer; transition: background var(--transition), transform var(--transition-fast);
+}
+.feedback-fab:hover { background: var(--primary-hover); }
+.feedback-fab:active { transform: translateY(1px); }
+.feedback-fab:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.feedback-fab svg { width: 22px; height: 22px; }
+.feedback-fab[hidden] { display: none !important; }
+@media (max-width: 480px) {
+    .feedback-fab { right: 12px; width: 46px; height: 46px; }
+}
+
+.feedback-dialog-backdrop {
+    position: fixed; z-index: 160; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(10, 20, 17, .45); padding: 20px;
+}
+.feedback-dialog-backdrop[hidden] { display: none !important; }
+.feedback-dialog {
+    width: min(420px, 100%); max-height: 90vh; overflow-y: auto; border-radius: var(--radius-lg);
+    background: var(--surface); box-shadow: var(--shadow-lg); padding: 22px;
+}
+.feedback-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.feedback-dialog-header h3 { margin: 0; color: var(--text); font-size: 1.05rem; }
+.feedback-dialog-form { display: flex; flex-direction: column; gap: var(--space-4); }
+
+.feedback-divider { border: 0; border-top: 1px solid var(--border-soft); margin: 0; }
+
+.feedback-rating { display: flex; gap: 6px; }
+.feedback-star {
+    border: 0; background: transparent; padding: 2px; color: var(--border); font-size: 1.6rem; line-height: 1;
+    cursor: pointer; transition: color var(--transition-fast), transform var(--transition-fast);
+}
+.feedback-star:hover, .feedback-star.is-filled { color: var(--primary); }
+.feedback-star:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+
+.feedback-message-label { display: flex; flex-direction: column; gap: 5px; color: var(--text); font-size: .82rem; font-weight: 650; }
+.feedback-counter { margin: -8px 0 0; color: var(--text-muted); font-size: .76rem; text-align: right; }
+
+.feedback-checkbox { display: flex; align-items: flex-start; gap: 8px; color: var(--text); font-size: .86rem; cursor: pointer; }
+.feedback-checkbox input { width: auto; flex: none; margin-top: 3px; }
+
+.feedback-privacy-note { margin: 0; color: var(--text-muted); font-size: .78rem; line-height: 1.5; }
+.feedback-privacy-note .text-button { margin-left: 4px; font-size: inherit; font-weight: 700; }
+
+.feedback-blocked-hint { margin: 0; color: var(--text-muted); font-size: .78rem; }
+.feedback-blocked-hint:empty { display: none; }
+
+@media (max-width: 480px) {
+    .feedback-dialog { padding: 18px; }
+}

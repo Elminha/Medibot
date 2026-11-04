@@ -27,6 +27,7 @@ test("isReminderChannel aceita só os valores válidos", () => {
     assert.equal(isReminderChannel("browser"), true);
     assert.equal(isReminderChannel("telegram"), true);
     assert.equal(isReminderChannel("sms"), false);
+    assert.equal(isReminderChannel("email"), false);
     assert.equal(isReminderChannel(123), false);
     assert.equal(isReminderChannel(null), false);
 });

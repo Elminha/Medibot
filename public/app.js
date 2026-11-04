@@ -39,6 +39,14 @@ import {
     parseStoredLinkCode,
     TelegramLinkCountdownTimer
 } from "./telegramLinkCountdown.js";
+import {
+    detectFeedbackDevice,
+    FEEDBACK_MESSAGE_MAX_LENGTH,
+    getFeedbackBlockedHint,
+    isFeedbackFormValid,
+    mapAppViewToFeedbackView,
+    remainingFeedbackCharacters
+} from "./feedbackWidget.js";
 
 // Lê e remove o token de "#redefinir=<token>" da URL antes de qualquer outro código
 // (tema, consentimento de cookies/GA, bootstrap de login). O token nunca é guardado em
@@ -180,12 +188,19 @@ function trackPageView(view) {
     });
 }
 
+// Reatribuído mais abaixo (seção do widget de feedback) para esconder o botão
+// flutuante enquanto o banner estiver visível; antes disso, como o botão já
+// começa escondido (usuário ainda não logado), o no-op abaixo não causa problema.
+let cookieBannerVisibilityListener = () => {};
+
 function hideCookieBanner() {
     if (cookieBanner) cookieBanner.hidden = true;
+    cookieBannerVisibilityListener();
 }
 
 function showCookieBanner() {
     if (cookieBanner) cookieBanner.hidden = false;
+    cookieBannerVisibilityListener();
 }
 
 function initCookieConsent() {
@@ -399,12 +414,17 @@ function clearApplicationData() {
 function showAuthentication(message = "") {
     window.localStorage.removeItem(authTokenStorageKey);
     clearApplicationData();
+    closeFeedbackDialog();
+    isFeedbackFabAllowed = false;
+    updateFeedbackFabVisibility();
     showLogin(message);
 }
 
 function showApplication(user) {
     authView.hidden = true;
     authenticatedApp.hidden = false;
+    isFeedbackFabAllowed = true;
+    updateFeedbackFabVisibility();
     loggedUser.textContent = user.name ? `Olá, ${user.name}` : "Usuário autenticado";
     if (userAvatar) userAvatar.textContent = user.name?.trim()?.charAt(0)?.toUpperCase() || "M";
     currentAuthUserId = user.id;
@@ -2708,6 +2728,203 @@ document.querySelector("#reset-password-request-new-button").addEventListener("c
 });
 
 document.querySelector("#logout-button").addEventListener("click", () => showAuthentication());
+
+// ===== Widget de feedback (botão flutuante, só para usuário logado) =====
+
+const feedbackFab = document.querySelector("#feedback-fab");
+const feedbackDialogBackdrop = document.querySelector("#feedback-dialog-backdrop");
+const feedbackDialog = document.querySelector("#feedback-dialog");
+const feedbackDialogCloseButton = document.querySelector("#feedback-dialog-close");
+const feedbackForm = document.querySelector("#feedback-form");
+const feedbackTypeButtons = Array.from(document.querySelectorAll("#feedback-type-options [data-feedback-type]"));
+const feedbackRatingGroup = document.querySelector("#feedback-rating");
+const feedbackStars = Array.from(feedbackRatingGroup.querySelectorAll(".feedback-star"));
+const feedbackMessageInput = document.querySelector("#feedback-message");
+const feedbackCounter = document.querySelector("#feedback-counter");
+const feedbackContactOkInput = document.querySelector("#feedback-contact-ok");
+const feedbackPrivacyLink = document.querySelector("#feedback-privacy-link");
+const feedbackBlockedHint = document.querySelector("#feedback-blocked-hint");
+const feedbackDialogFeedback = document.querySelector("#feedback-dialog-feedback");
+const feedbackSubmitButton = document.querySelector("#feedback-submit-button");
+
+let feedbackSelectedType = null;
+let feedbackSelectedRating = null;
+let isFeedbackFabAllowed = false;
+
+// Esconde o fab enquanto o banner de cookies estiver visível (eles colidiriam no
+// mesmo canto em telas pequenas), além de respeitar se o usuário está logado.
+function updateFeedbackFabVisibility() {
+    feedbackFab.hidden = !isFeedbackFabAllowed || Boolean(cookieBanner && !cookieBanner.hidden);
+}
+
+cookieBannerVisibilityListener = updateFeedbackFabVisibility;
+
+function updateFeedbackSubmitState() {
+    const hint = getFeedbackBlockedHint(feedbackSelectedType, feedbackMessageInput.value);
+    feedbackSubmitButton.disabled = hint !== "";
+    feedbackBlockedHint.textContent = hint;
+}
+
+function renderFeedbackRating() {
+    feedbackStars.forEach((star) => {
+        const rating = Number(star.dataset.rating);
+        const isSelected = rating === feedbackSelectedRating;
+        star.classList.toggle("is-filled", feedbackSelectedRating != null && rating <= feedbackSelectedRating);
+        star.setAttribute("aria-checked", String(isSelected));
+        star.tabIndex = (feedbackSelectedRating ? isSelected : rating === 1) ? 0 : -1;
+    });
+}
+
+function setFeedbackRating(rating) {
+    feedbackSelectedRating = rating;
+    renderFeedbackRating();
+}
+
+feedbackStars.forEach((star) => {
+    star.addEventListener("click", () => {
+        const rating = Number(star.dataset.rating);
+        setFeedbackRating(feedbackSelectedRating === rating ? null : rating);
+        star.focus();
+    });
+});
+
+feedbackRatingGroup.addEventListener("keydown", (event) => {
+    if (!["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(event.key)) return;
+    event.preventDefault();
+    const currentIndex = feedbackStars.findIndex((star) => star === document.activeElement);
+    const direction = (event.key === "ArrowRight" || event.key === "ArrowDown") ? 1 : -1;
+    const nextIndex = Math.min(feedbackStars.length - 1, Math.max(0, (currentIndex === -1 ? 0 : currentIndex) + direction));
+    const nextStar = feedbackStars[nextIndex];
+    setFeedbackRating(Number(nextStar.dataset.rating));
+    nextStar.focus();
+});
+
+feedbackTypeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+        feedbackSelectedType = button.dataset.feedbackType;
+        feedbackTypeButtons.forEach((btn) => btn.setAttribute("aria-pressed", String(btn === button)));
+        updateFeedbackSubmitState();
+    });
+});
+
+feedbackMessageInput.addEventListener("input", () => {
+    feedbackCounter.textContent = `${remainingFeedbackCharacters(feedbackMessageInput.value)} caracteres restantes`;
+    updateFeedbackSubmitState();
+});
+
+function getFeedbackFocusableElements() {
+    return Array.from(feedbackDialog.querySelectorAll(
+        'button:not([disabled]), textarea, input, select, a[href], [tabindex]:not([tabindex="-1"])'
+    ));
+}
+
+function onFeedbackDialogKeyDown(event) {
+    if (event.key === "Escape") {
+        event.preventDefault();
+        closeFeedbackDialog();
+        return;
+    }
+    if (event.key !== "Tab") return;
+
+    const focusable = getFeedbackFocusableElements();
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
+}
+
+function onFeedbackBackdropClick(event) {
+    if (event.target === feedbackDialogBackdrop) closeFeedbackDialog();
+}
+
+function resetFeedbackForm() {
+    feedbackSelectedType = null;
+    feedbackSelectedRating = null;
+    feedbackTypeButtons.forEach((button) => button.setAttribute("aria-pressed", "false"));
+    renderFeedbackRating();
+    feedbackMessageInput.value = "";
+    feedbackCounter.textContent = `${FEEDBACK_MESSAGE_MAX_LENGTH} caracteres restantes`;
+    feedbackContactOkInput.checked = false;
+    feedbackDialogFeedback.textContent = "";
+    feedbackDialogFeedback.classList.remove("feedback-error", "feedback-success");
+    updateFeedbackSubmitState();
+}
+
+function openFeedbackDialog() {
+    resetFeedbackForm();
+    feedbackDialogBackdrop.hidden = false;
+    document.addEventListener("keydown", onFeedbackDialogKeyDown);
+    feedbackDialogBackdrop.addEventListener("click", onFeedbackBackdropClick);
+    feedbackStars[0].focus();
+}
+
+function closeFeedbackDialog() {
+    if (feedbackDialogBackdrop.hidden) return;
+    feedbackDialogBackdrop.hidden = true;
+    document.removeEventListener("keydown", onFeedbackDialogKeyDown);
+    feedbackDialogBackdrop.removeEventListener("click", onFeedbackBackdropClick);
+    feedbackFab.focus();
+}
+
+feedbackFab.addEventListener("click", openFeedbackDialog);
+feedbackDialogCloseButton.addEventListener("click", closeFeedbackDialog);
+feedbackPrivacyLink.addEventListener("click", () => {
+    closeFeedbackDialog();
+    showCookieBanner();
+});
+
+feedbackForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    if (!isFeedbackFormValid(feedbackSelectedType, feedbackMessageInput.value)) {
+        feedbackDialogFeedback.textContent = "Escolha um tipo e escreva uma mensagem de 1 a 2000 caracteres.";
+        feedbackDialogFeedback.classList.add("feedback-error");
+        feedbackDialogFeedback.classList.remove("feedback-success");
+        return;
+    }
+
+    feedbackSubmitButton.disabled = true;
+    feedbackDialogFeedback.textContent = "";
+    feedbackDialogFeedback.classList.remove("feedback-error", "feedback-success");
+
+    try {
+        const response = await authenticatedFetch("/api/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                type: feedbackSelectedType,
+                rating: feedbackSelectedRating ?? undefined,
+                message: feedbackMessageInput.value,
+                view: mapAppViewToFeedbackView(activeView),
+                device: detectFeedbackDevice(navigator.userAgent),
+                contactOk: feedbackContactOkInput.checked
+            })
+        });
+
+        if (!response.ok) {
+            const fallback = response.status === 429
+                ? "Você atingiu o limite de envios de feedback. Tente novamente mais tarde."
+                : "Não foi possível enviar seu feedback.";
+            throw new Error(await readError(response, fallback));
+        }
+
+        closeFeedbackDialog();
+        showToast("Obrigado! Recebemos seu feedback.");
+    } catch (error) {
+        if (error?.message === "authentication-required") return;
+        feedbackDialogFeedback.textContent = error?.message || "Não foi possível enviar seu feedback.";
+        feedbackDialogFeedback.classList.add("feedback-error");
+    } finally {
+        updateFeedbackSubmitState();
+    }
+});
 
 async function fetchPasswordResetCapability() {
     try {
