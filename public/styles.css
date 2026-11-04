@@ -473,7 +473,6 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .wizard-chip:disabled { cursor: not-allowed; color: var(--text-muted); opacity: .7; }
 .wizard-chip:disabled:hover { border-color: var(--border); background: var(--surface); }
 .wizard-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.wizard-soon { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
 
 .wizard-time-list { display: flex; flex-wrap: wrap; gap: 10px; }
 .wizard-time-row { display: inline-flex; align-items: flex-start; gap: 6px; }

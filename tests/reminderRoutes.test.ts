@@ -348,6 +348,8 @@ test("POST valida channels: array vazio, valor inválido e duplicata são 400", 
 
     assert.equal((await post({ medicationId: 1, times: ["08:00"], weekdays: [], channels: [] })).status, 400);
     assert.equal((await post({ medicationId: 1, times: ["08:00"], weekdays: [], channels: ["sms"] })).status, 400);
+    // "email" não é (e não deve ser) um canal de lembrete válido: só browser/telegram.
+    assert.equal((await post({ medicationId: 1, times: ["08:00"], weekdays: [], channels: ["email"] })).status, 400);
     assert.equal((await post({
         medicationId: 1, times: ["08:00"], weekdays: [], channels: ["browser", "browser"]
     })).status, 400);
