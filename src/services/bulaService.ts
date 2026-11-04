@@ -1,5 +1,8 @@
 import { getVectorStoreId, model, openai } from "../config.js";
 import { isPersonalDoseQuestion } from "./doseQuestionDetector.js";
+import { toReadableSourceName } from "./bulaSourceName.js";
+
+export { toReadableSourceName } from "./bulaSourceName.js";
 
 const ANSWER_NOT_FOUND = "Essa informação não foi encontrada nas bulas disponíveis no sistema.";
 
@@ -49,20 +52,6 @@ export interface ConsultarBulaOptions {
 interface ConversationMessage {
     role: "user" | "assistant";
     content: string;
-}
-
-/** Converte um nome de arquivo de bula em um nome legível (ex.: "bula_ibuprofeno.pdf" -> "Ibuprofeno"). */
-export function toReadableSourceName(filename: string): string {
-    const withoutExtension = filename.replace(/\.[a-z0-9]+$/i, "");
-    const withoutBulaPrefix = withoutExtension.replace(/^bula[\s_-]*/i, "");
-    const normalized = withoutBulaPrefix.replace(/[_-]+/g, " ").trim();
-    const base = normalized || withoutExtension.trim() || filename;
-
-    return base
-        .split(/\s+/)
-        .filter(Boolean)
-        .map((word) => (/\d/.test(word) ? word : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()))
-        .join(" ");
 }
 
 function dedupeReadableNames(filenames: Iterable<string>): string[] {

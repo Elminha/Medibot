@@ -12,6 +12,7 @@
         "create:vector-store": "tsx src/createVectorStore.ts",
         "create:file-search-store": "tsx src/createVectorStore.ts",
         "upload:bula": "tsx src/uploadBula.ts",
+        "upload:bulas": "tsx src/uploadBulas.ts",
         "search:bula": "tsc && node dist/searchBula.js",
         "ask:bula": "tsx src/askBula.ts",
         "db:migrate": "tsx src/database/migrate.ts",
