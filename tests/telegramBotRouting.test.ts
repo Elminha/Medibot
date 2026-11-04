@@ -48,6 +48,7 @@ const pool = getDatabasePool();
 
 test.afterEach(() => {
     mock.restoreAll();
+    delete process.env.EMAIL_VERIFICATION_REQUIRED;
 });
 
 interface FakeQueryRow {
@@ -88,11 +89,12 @@ interface ApiCall {
     payload: Record<string, unknown>;
 }
 
-function setup() {
+function setup(options: { emailVerifiedAt?: Date | null } = {}) {
     const apiCalls: ApiCall[] = [];
     const insertCalls: Array<{ params: unknown[] }> = [];
     const deleteCalls: Array<{ params: unknown[] }> = [];
     let queryRows = seedRows();
+    const emailVerifiedAt = options.emailVerifiedAt === undefined ? new Date() : options.emailVerifiedAt;
 
     async function fakeFetch(url: string, init?: { body?: unknown }) {
         const method = new URL(String(url)).pathname.split("/").pop() ?? "";
@@ -112,6 +114,13 @@ function setup() {
             const chatId = params[0];
             return chatId === TEST_CHAT_ID
                 ? { rows: [{ id: String(TEST_USER_ID) }], rowCount: 1 }
+                : { rows: [], rowCount: 0 };
+        }
+
+        if (sql.startsWith("SELECT email, email_verified_at FROM users WHERE id")) {
+            const [userId] = params as [number];
+            return userId === TEST_USER_ID
+                ? { rows: [{ email: "usuario@exemplo.com", email_verified_at: emailVerifiedAt }], rowCount: 1 }
                 : { rows: [], rowCount: 0 };
         }
 
@@ -383,4 +392,97 @@ test("callback_query a:n (cancelar) não apaga nada e edita a mensagem para 'can
     assert.equal(edits.length, 1);
     assert.match(String(edits[0].payload.text), /cancelado/);
     assert.equal(deleteCalls.length, 0);
+});
+
+// ===== Conta vinculada mas com e-mail pendente de confirmação (EMAIL_VERIFICATION_REQUIRED) =====
+
+test("flag desligada (padrão): conta vinculada e não verificada continua usando o bot normalmente", async () => {
+    delete process.env.EMAIL_VERIFICATION_REQUIRED;
+    const { bot, apiCalls, insertCalls } = setup({ emailVerifiedAt: null });
+    mockOpenAiOnce({
+        output_text: "Resposta de teste.",
+        output: [{ type: "message", content: [{ type: "output_text", text: "Resposta de teste.", annotations: [] }] }]
+    });
+
+    await bot.handleUpdate(textUpdate("Quais os efeitos da dipirona?") as never);
+
+    assert.equal(insertCalls.length, 1);
+    assert.ok(sendMessageCalls(apiCalls).some((call) => String(call.payload.text).includes("Resposta de teste.")));
+});
+
+test("flag ligada: pergunta de texto livre de conta não verificada é bloqueada sem chamar a OpenAI nem salvar", async () => {
+    process.env.EMAIL_VERIFICATION_REQUIRED = "true";
+    const { bot, apiCalls, insertCalls } = setup({ emailVerifiedAt: null });
+    const createMock = mockOpenAiOnce({ output_text: "não deveria ser chamado", output: [] });
+
+    await bot.handleUpdate(textUpdate("Quais os efeitos da dipirona?") as never);
+
+    assert.equal(createMock.mock.callCount(), 0);
+    assert.equal(insertCalls.length, 0);
+    const replies = sendMessageCalls(apiCalls);
+    assert.equal(replies.length, 1);
+    assert.match(String(replies[0].payload.text), /Confirme seu e-mail/);
+});
+
+test("flag ligada: /historico de conta não verificada é bloqueado", async () => {
+    process.env.EMAIL_VERIFICATION_REQUIRED = "true";
+    const { bot, apiCalls } = setup({ emailVerifiedAt: null });
+
+    await bot.handleUpdate(textUpdate("/historico") as never);
+
+    const replies = sendMessageCalls(apiCalls);
+    assert.equal(replies.length, 1);
+    assert.match(String(replies[0].payload.text), /Confirme seu e-mail/);
+    assert.doesNotMatch(String(replies[0].payload.text), /Suas consultas mais recentes/);
+});
+
+test("flag ligada: /apagar de conta não verificada é bloqueado", async () => {
+    process.env.EMAIL_VERIFICATION_REQUIRED = "true";
+    const { bot, apiCalls } = setup({ emailVerifiedAt: null });
+
+    await bot.handleUpdate(textUpdate("/apagar") as never);
+
+    const replies = sendMessageCalls(apiCalls);
+    assert.equal(replies.length, 1);
+    assert.match(String(replies[0].payload.text), /Confirme seu e-mail/);
+});
+
+test("flag ligada: callback de histórico (h:p:) de conta não verificada é bloqueado com alerta", async () => {
+    process.env.EMAIL_VERIFICATION_REQUIRED = "true";
+    const { bot, apiCalls } = setup({ emailVerifiedAt: null });
+
+    await bot.handleUpdate(callbackQueryUpdate(buildHistoryPageCallbackData(0)) as never);
+
+    const callbackAnswers = apiCalls.filter((call) => call.method === "answerCallbackQuery");
+    assert.equal(callbackAnswers.length, 1);
+    assert.match(String(callbackAnswers[0].payload.text), /Confirme seu e-mail/);
+    assert.equal(callbackAnswers[0].payload.show_alert, true);
+    assert.equal(sendMessageCalls(apiCalls).length, 0);
+});
+
+test("flag ligada: callback de confirmação de apagar (a:y:) de conta não verificada é bloqueado, sem apagar nada", async () => {
+    process.env.EMAIL_VERIFICATION_REQUIRED = "true";
+    const { bot, apiCalls, deleteCalls, getQueryRows } = setup({ emailVerifiedAt: null });
+
+    await bot.handleUpdate(callbackQueryUpdate(buildDeleteConfirmCallbackData(currentMinutesSinceEpoch())) as never);
+
+    const callbackAnswers = apiCalls.filter((call) => call.method === "answerCallbackQuery");
+    assert.equal(callbackAnswers.length, 1);
+    assert.match(String(callbackAnswers[0].payload.text), /Confirme seu e-mail/);
+    assert.equal(deleteCalls.length, 0);
+    assert.ok(getQueryRows().some((row) => row.channel === "telegram"));
+});
+
+test("flag ligada: conta JÁ verificada continua usando o bot normalmente", async () => {
+    process.env.EMAIL_VERIFICATION_REQUIRED = "true";
+    const { bot, apiCalls, insertCalls } = setup({ emailVerifiedAt: new Date() });
+    mockOpenAiOnce({
+        output_text: "Resposta de teste.",
+        output: [{ type: "message", content: [{ type: "output_text", text: "Resposta de teste.", annotations: [] }] }]
+    });
+
+    await bot.handleUpdate(textUpdate("Quais os efeitos da dipirona?") as never);
+
+    assert.equal(insertCalls.length, 1);
+    assert.ok(sendMessageCalls(apiCalls).some((call) => String(call.payload.text).includes("Resposta de teste.")));
 });

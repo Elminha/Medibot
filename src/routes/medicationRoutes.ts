@@ -1,5 +1,5 @@
 import { Router, type Response } from "express";
-import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
+import { requireAuthentication, requireVerifiedEmail, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
 import {
     createMedication,
     deleteMedication,
@@ -12,7 +12,7 @@ import {
 
 const medicationRoutes = Router();
 
-medicationRoutes.use(requireAuthentication);
+medicationRoutes.use(requireAuthentication, requireVerifiedEmail);
 
 function getAuthenticatedUserId(request: AuthenticatedRequest): number {
     return request.auth!.userId;

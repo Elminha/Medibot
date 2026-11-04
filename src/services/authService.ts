@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { createHmac } from "node:crypto";
 import { getDatabasePool } from "../database/database.js";
 import {
     normalizeEmail,
@@ -8,6 +9,7 @@ import {
     validateEmail,
     ValidationError
 } from "./identifierNormalization.js";
+import { hasExceededHourlyLimit } from "./telegramRateLimiter.js";
 
 export { ValidationError };
 
@@ -15,6 +17,13 @@ const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_BYTES = 72;
 const BCRYPT_ROUNDS = 12;
 const TOKEN_EXPIRATION = "7d";
+const ONE_HOUR_MS = 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * ONE_HOUR_MS;
+// Limite de tomada de cadastro por e-mail-alvo (não por quem está tentando cadastrar):
+// evita que alguém fique tentando se cadastrar repetidamente com o e-mail de outra
+// pessoa só para invalidar o token de verificação dela.
+const TAKEOVER_LIMIT_PER_EMAIL_PER_HOUR = 3;
+const TAKEOVER_LIMIT_PER_EMAIL_PER_DAY = 10;
 
 export interface AuthUser {
     id: number;
@@ -23,6 +32,9 @@ export interface AuthUser {
     phone: string | null;
     timezone: string;
     telegramLinked: boolean;
+    // Contas sem e-mail (legado, só telefone) são tratadas como verificadas: não há
+    // e-mail para confirmar. Ver requireVerifiedEmail em authMiddleware.ts.
+    emailVerified: boolean;
 }
 
 export interface RegisterInput {
@@ -51,12 +63,20 @@ interface AuthUserRow {
     timezone: string;
     password_hash: string;
     telegram_chat_id: string | null;
+    email_verified_at: Date | null;
 }
 
 export class AccountAlreadyExistsError extends Error {
     constructor() {
         super("Já existe uma conta com esses dados.");
         this.name = "AccountAlreadyExistsError";
+    }
+}
+
+export class TooManyRegistrationAttemptsError extends Error {
+    constructor() {
+        super("Muitas tentativas. Tente novamente mais tarde.");
+        this.name = "TooManyRegistrationAttemptsError";
     }
 }
 
@@ -110,7 +130,8 @@ function toAuthUser(row: AuthUserRow): AuthUser {
         // que existia então. Isso não é um telefone real e nunca deve ser exposto.
         phone: row.phone && row.phone.startsWith("AUTH-") ? null : row.phone,
         timezone: row.timezone,
-        telegramLinked: row.telegram_chat_id !== null
+        telegramLinked: row.telegram_chat_id !== null,
+        emailVerified: row.email === null || row.email_verified_at !== null
     };
 }
 
@@ -173,7 +194,7 @@ export async function getAuthenticatedUser(token: string): Promise<AuthUser | un
     }
 
     const result = await getDatabasePool().query<AuthenticatedUserRow>(
-        `SELECT id, name, email, phone, timezone, password_hash, telegram_chat_id, password_changed_at
+        `SELECT id, name, email, phone, timezone, password_hash, telegram_chat_id, password_changed_at, email_verified_at
          FROM users
          WHERE id = $1 AND password_hash IS NOT NULL;`,
         [claims.userId]
@@ -188,6 +209,53 @@ export async function getAuthenticatedUser(token: string): Promise<AuthUser | un
     }
 
     return toAuthUser(row);
+}
+
+interface Queryable {
+    query: <T = unknown>(text: string, params?: unknown[]) => Promise<{ rows: T[]; rowCount: number | null }>;
+}
+
+/**
+ * Conta sem nenhum dado próprio (conversas, lembretes, feedback ou vínculo do
+ * Telegram): critério usado para decidir se uma conta nunca verificada pode ser
+ * substituída por um novo cadastro no mesmo e-mail (ver registerUser). Roda na mesma
+ * `client`/transação que travou a linha do usuário, para ler um estado consistente.
+ */
+async function hasAnyUserData(db: Queryable, userId: number): Promise<boolean> {
+    const result = await db.query<{ has_data: boolean }>(
+        `SELECT EXISTS (
+            SELECT 1 FROM queries WHERE user_id = $1
+            UNION ALL
+            SELECT 1 FROM reminders r INNER JOIN medications m ON m.id = r.medication_id WHERE m.user_id = $1
+            UNION ALL
+            SELECT 1 FROM feedback WHERE user_id = $1
+            UNION ALL
+            SELECT 1 FROM users WHERE id = $1 AND telegram_chat_id IS NOT NULL
+        ) AS has_data;`,
+        [userId]
+    );
+    return result.rows[0]?.has_data === true;
+}
+
+/**
+ * HMAC-SHA256 com JWT_SECRET: mesma técnica de hashIdentifier em
+ * passwordResetService.ts (duplicada aqui para não criar um import circular entre os
+ * dois módulos — passwordResetService já importa de authService).
+ */
+function hashEmailForRateLimit(email: string): string {
+    return createHmac("sha256", getJwtSecret()).update(email).digest("hex");
+}
+
+async function countRegistrationAttempts(emailHash: string, since: Date): Promise<number> {
+    const result = await getDatabasePool().query<{ count: string }>(
+        "SELECT COUNT(*) AS count FROM registration_attempts WHERE email_hash = $1 AND created_at >= $2;",
+        [emailHash, since]
+    );
+    return Number(result.rows[0]?.count ?? 0);
+}
+
+async function recordRegistrationAttempt(emailHash: string): Promise<void> {
+    await getDatabasePool().query("INSERT INTO registration_attempts (email_hash) VALUES ($1);", [emailHash]);
 }
 
 export async function registerUser(input: RegisterInput): Promise<AuthResult> {
@@ -215,30 +283,85 @@ export async function registerUser(input: RegisterInput): Promise<AuthResult> {
     const timezone = input.timezone?.trim() || "America/Sao_Paulo";
 
     const pool = getDatabasePool();
-    const existing = await pool.query(
-        "SELECT 1 FROM users WHERE email = $1 OR phone = $2 LIMIT 1;",
-        [email, phone ?? null]
-    );
-    if (existing.rowCount && existing.rowCount > 0) {
-        throw new AccountAlreadyExistsError();
+
+    if (phone) {
+        const phoneMatch = await pool.query("SELECT 1 FROM users WHERE phone = $1 LIMIT 1;", [phone]);
+        if (phoneMatch.rowCount && phoneMatch.rowCount > 0) {
+            throw new AccountAlreadyExistsError();
+        }
     }
 
+    // bcrypt.hash é CPU-bound e não depende do banco: calculado antes de abrir a
+    // transação, para a trava da linha (FOR UPDATE) ficar presa pelo menor tempo possível.
     const passwordHash = await hashPassword(input.password);
 
+    const client = await pool.connect();
     try {
-        const result = await pool.query<AuthUserRow>(
+        await client.query("BEGIN");
+
+        // Trava a linha do e-mail (se existir) antes de decidir qualquer coisa: fecha a
+        // corrida com confirmEmailVerification, que trava a MESMA linha antes de marcar
+        // email_verified_at (mesma ordem de lock nos dois lados, ver emailVerificationService.ts).
+        const emailMatch = await client.query<{ id: string; email_verified_at: Date | null }>(
+            "SELECT id, email_verified_at FROM users WHERE email = $1 LIMIT 1 FOR UPDATE;",
+            [email]
+        );
+        const existingEmailRow = emailMatch.rows[0];
+
+        if (existingEmailRow) {
+            // Limite por e-mail-alvo (3/hora, 10/dia): fora da transação/trava de
+            // propósito, para continuar contando mesmo quando a tentativa é rejeitada
+            // (ninguém pode ficar testando repetidamente se um e-mail está verificado).
+            const emailHash = hashEmailForRateLimit(email);
+            const now = new Date();
+            const [hourlyAttempts, dailyAttempts] = await Promise.all([
+                countRegistrationAttempts(emailHash, new Date(now.getTime() - ONE_HOUR_MS)),
+                countRegistrationAttempts(emailHash, new Date(now.getTime() - ONE_DAY_MS))
+            ]);
+            if (
+                hasExceededHourlyLimit(hourlyAttempts, TAKEOVER_LIMIT_PER_EMAIL_PER_HOUR) ||
+                hasExceededHourlyLimit(dailyAttempts, TAKEOVER_LIMIT_PER_EMAIL_PER_DAY)
+            ) {
+                throw new TooManyRegistrationAttemptsError();
+            }
+            await recordRegistrationAttempt(emailHash);
+
+            const existingUserId = Number(existingEmailRow.id);
+            const isVerified = existingEmailRow.email_verified_at !== null;
+
+            if (isVerified || (await hasAnyUserData(client, existingUserId))) {
+                throw new AccountAlreadyExistsError();
+            }
+
+            // Conta antiga, nunca verificada e sem nenhum dado: substituída pelo novo
+            // cadastro (nova senha, novo token de verificação). O DELETE já invalida
+            // qualquer token de verificação pendente dessa conta via ON DELETE CASCADE
+            // em email_verification_tokens.user_id. Contas verificadas ou com dados
+            // nunca são substituídas (caso acima).
+            await client.query("DELETE FROM users WHERE id = $1;", [existingUserId]);
+        }
+
+        const result = await client.query<AuthUserRow>(
             `INSERT INTO users (name, email, password_hash, phone, timezone)
              VALUES ($1, $2, $3, $4, $5)
-             RETURNING id, name, email, phone, timezone, password_hash, telegram_chat_id;`,
+             RETURNING id, name, email, phone, timezone, password_hash, telegram_chat_id, email_verified_at;`,
             [name, email, passwordHash, phone ?? null, timezone]
         );
+
+        await client.query("COMMIT");
         const user = toAuthUser(result.rows[0]);
         return { user, token: createToken(user.id) };
     } catch (error: unknown) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        if (error instanceof AccountAlreadyExistsError || error instanceof TooManyRegistrationAttemptsError) {
+            throw error;
+        }
         if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
             throw new AccountAlreadyExistsError();
         }
         throw error;
+    } finally {
+        client.release();
     }
 }
 
@@ -252,7 +375,7 @@ export async function loginUser(input: LoginInput): Promise<AuthResult> {
     }
 
     const result = await getDatabasePool().query<AuthUserRow>(
-        `SELECT id, name, email, phone, timezone, password_hash, telegram_chat_id
+        `SELECT id, name, email, phone, timezone, password_hash, telegram_chat_id, email_verified_at
          FROM users
          WHERE (email = $1 OR phone = $1) AND password_hash IS NOT NULL;`,
         [identifier.value]

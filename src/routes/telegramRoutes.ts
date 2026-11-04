@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { webhookCallback } from "grammy";
-import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
+import { requireAuthentication, requireVerifiedEmail, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
 import { getTelegramBot } from "../services/telegramBot.js";
 import {
     buildTelegramDeepLink,
@@ -58,7 +58,7 @@ telegramRoutes.post("/webhook", async (request: Request, response: Response) => 
     }
 });
 
-telegramRoutes.post("/link-code", requireAuthentication, async (request: AuthenticatedRequest, response: Response) => {
+telegramRoutes.post("/link-code", requireAuthentication, requireVerifiedEmail, async (request: AuthenticatedRequest, response: Response) => {
     try {
         const { code, expiresAt } = await createLinkCode(request.auth!.userId);
         response.status(201).json({
@@ -76,7 +76,7 @@ telegramRoutes.post("/link-code", requireAuthentication, async (request: Authent
     }
 });
 
-telegramRoutes.delete("/link", requireAuthentication, async (request: AuthenticatedRequest, response: Response) => {
+telegramRoutes.delete("/link", requireAuthentication, requireVerifiedEmail, async (request: AuthenticatedRequest, response: Response) => {
     try {
         await unlinkUser(request.auth!.userId);
         response.status(204).send();

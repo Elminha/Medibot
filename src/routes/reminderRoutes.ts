@@ -1,5 +1,5 @@
 import { Router, type Response } from "express";
-import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
+import { requireAuthentication, requireVerifiedEmail, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
 import { MedicationNotFoundError } from "../services/medicationService.js";
 import { isReminderChannel, TelegramChannelRequiresLinkError, type ReminderChannel } from "../services/reminderChannelService.js";
 import {
@@ -16,7 +16,7 @@ import {
 const reminderRoutes = Router();
 const MAX_TIMES_PER_REMINDER = 12;
 
-reminderRoutes.use(requireAuthentication);
+reminderRoutes.use(requireAuthentication, requireVerifiedEmail);
 
 function getAuthenticatedUserId(request: AuthenticatedRequest): number {
     return request.auth!.userId;

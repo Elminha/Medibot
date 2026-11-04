@@ -17,6 +17,8 @@ interface CandidateRow {
     times: string[];
     weekdays: number[];
     chat_id: string | null;
+    email: string | null;
+    email_verified_at: Date | null;
 }
 
 function candidateRow(options: {
@@ -28,6 +30,7 @@ function candidateRow(options: {
     startsOn?: string | null;
     endsOn?: string | null;
     chatId?: number | null;
+    emailVerified?: boolean;
 }): CandidateRow {
     return {
         reminder_id: String(options.id),
@@ -37,7 +40,9 @@ function candidateRow(options: {
         ends_on: options.endsOn ?? null,
         times: options.times,
         weekdays: options.weekdays ?? [],
-        chat_id: options.chatId === undefined ? null : (options.chatId === null ? null : String(options.chatId))
+        chat_id: options.chatId === undefined ? null : (options.chatId === null ? null : String(options.chatId)),
+        email: "usuario@exemplo.com",
+        email_verified_at: (options.emailVerified ?? true) ? new Date() : null
     };
 }
 
@@ -298,6 +303,74 @@ test("usuário sem vínculo do Telegram: registrado como skipped, sem chamar o T
     assert.equal(summary.sent, 0);
     assert.equal(sender.calls.length, 0);
     assert.equal([...deliveries.values()][0].status, "skipped");
+});
+
+test("flag EMAIL_VERIFICATION_REQUIRED desligada (padrão): conta vinculada e não verificada ainda recebe o lembrete", async () => {
+    delete process.env.EMAIL_VERIFICATION_REQUIRED;
+    const clock = { now: () => new Date(OCCURRENCE_LOCAL_0800.getTime()) };
+    const { pool, setCandidates } = createFakePool(clock);
+    setCandidates([candidateRow({ id: 1, times: ["08:00"], chatId: 555, emailVerified: false })]);
+    const sender = createFakeSender(() => {});
+
+    const summary = await runReminderDispatch({ pool, sender, now: clock.now }, { dryRun: false });
+    assert.equal(summary.sent, 1);
+    assert.equal(summary.skipped, 0);
+    assert.equal(sender.calls.length, 1);
+});
+
+test("flag EMAIL_VERIFICATION_REQUIRED ligada: conta vinculada mas com e-mail pendente é marcada skipped, sem enviar", async () => {
+    process.env.EMAIL_VERIFICATION_REQUIRED = "true";
+    try {
+        const clock = { now: () => new Date(OCCURRENCE_LOCAL_0800.getTime()) };
+        const { pool, setCandidates, deliveries } = createFakePool(clock);
+        setCandidates([candidateRow({ id: 1, times: ["08:00"], chatId: 555, emailVerified: false })]);
+        const sender = createFakeSender(() => {
+            throw new Error("não deveria chamar o Telegram para conta não verificada");
+        });
+
+        const summary = await runReminderDispatch({ pool, sender, now: clock.now }, { dryRun: false });
+        assert.equal(summary.skipped, 1);
+        assert.equal(summary.sent, 0);
+        assert.equal(sender.calls.length, 0);
+        assert.equal([...deliveries.values()][0].status, "skipped");
+    } finally {
+        delete process.env.EMAIL_VERIFICATION_REQUIRED;
+    }
+});
+
+test("flag EMAIL_VERIFICATION_REQUIRED ligada: conta JÁ verificada continua recebendo o lembrete normalmente", async () => {
+    process.env.EMAIL_VERIFICATION_REQUIRED = "true";
+    try {
+        const clock = { now: () => new Date(OCCURRENCE_LOCAL_0800.getTime()) };
+        const { pool, setCandidates } = createFakePool(clock);
+        setCandidates([candidateRow({ id: 1, times: ["08:00"], chatId: 555, emailVerified: true })]);
+        const sender = createFakeSender(() => {});
+
+        const summary = await runReminderDispatch({ pool, sender, now: clock.now }, { dryRun: false });
+        assert.equal(summary.sent, 1);
+        assert.equal(summary.skipped, 0);
+        assert.equal(sender.calls.length, 1);
+    } finally {
+        delete process.env.EMAIL_VERIFICATION_REQUIRED;
+    }
+});
+
+test("flag EMAIL_VERIFICATION_REQUIRED ligada: dryRun também conta como skipped, sem chamar o Telegram", async () => {
+    process.env.EMAIL_VERIFICATION_REQUIRED = "true";
+    try {
+        const clock = { now: () => new Date(OCCURRENCE_LOCAL_0800.getTime()) };
+        const { pool, setCandidates } = createFakePool(clock);
+        setCandidates([candidateRow({ id: 1, times: ["08:00"], chatId: 555, emailVerified: false })]);
+        const sender = createFakeSender(() => {
+            throw new Error("dryRun nunca deveria chamar o Telegram");
+        });
+
+        const summary = await runReminderDispatch({ pool, sender, now: clock.now }, { dryRun: true });
+        assert.equal(summary.skipped, 1);
+        assert.equal(sender.calls.length, 0);
+    } finally {
+        delete process.env.EMAIL_VERIFICATION_REQUIRED;
+    }
 });
 
 test("usuário desvinculado entre execuções: primeira execução envia, segunda (outro horário, já sem vínculo) marca skipped", async () => {

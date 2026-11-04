@@ -1,10 +1,10 @@
 import { Router, type Response } from "express";
-import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
+import { requireAuthentication, requireVerifiedEmail, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
 import { listAvailableBulas } from "../services/bulaListService.js";
 
 const bulaListRoutes = Router();
 
-bulaListRoutes.use(requireAuthentication);
+bulaListRoutes.use(requireAuthentication, requireVerifiedEmail);
 
 bulaListRoutes.get("/", async (_request: AuthenticatedRequest, response: Response) => {
     try {

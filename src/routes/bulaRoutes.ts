@@ -1,11 +1,11 @@
 import { Router, type Response } from "express";
-import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
+import { requireAuthentication, requireVerifiedEmail, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
 import { consultarBula } from "../services/bulaService.js";
 import { getRecentConversationTurns, saveQuery } from "../services/queryHistoryService.js";
 
 const bulaRoutes = Router();
 
-bulaRoutes.use(requireAuthentication);
+bulaRoutes.use(requireAuthentication, requireVerifiedEmail);
 
 bulaRoutes.post("/", async (request: AuthenticatedRequest, response: Response) => {
     const { question } = request.body as { question?: unknown };

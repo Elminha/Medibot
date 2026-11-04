@@ -158,6 +158,9 @@ textarea { resize: vertical; }
 .auth-feedback { min-height: 1.3em; margin: 14px 0 0; color: var(--danger); font-size: .86rem; }
 .auth-feedback.success { color: var(--primary); }
 .auth-switch { margin: 18px 0 0; color: var(--text-muted); font-size: .88rem; text-align: center; }
+/* Botão de reenvio: mesmo padrão dos botões dentro de .auth-form, mas fora de um <form>
+   (não há outro campo para submeter junto). */
+#email-verification-panel .primary-button { min-height: 46px; margin-top: 20px; width: 100%; }
 .text-button { border: 0; background: transparent; color: var(--primary); cursor: pointer; font-weight: 700; padding: 0; }
 .text-button:hover { color: var(--primary-hover); text-decoration: underline; }
 

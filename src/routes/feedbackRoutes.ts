@@ -1,5 +1,5 @@
 import { Router, type Response } from "express";
-import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
+import { requireAuthentication, requireVerifiedEmail, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
 import {
     createFeedback,
     FeedbackRateLimitError,
@@ -13,7 +13,7 @@ import {
 
 const feedbackRoutes = Router();
 
-feedbackRoutes.use(requireAuthentication);
+feedbackRoutes.use(requireAuthentication, requireVerifiedEmail);
 
 function getAuthenticatedUserId(request: AuthenticatedRequest): number {
     return request.auth!.userId;

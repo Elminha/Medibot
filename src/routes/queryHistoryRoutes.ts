@@ -1,5 +1,5 @@
 import { Router, type Response } from "express";
-import { requireAuthentication, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
+import { requireAuthentication, requireVerifiedEmail, type AuthenticatedRequest } from "../middleware/authMiddleware.js";
 import {
     deleteQuery,
     getQueryById,
@@ -9,7 +9,7 @@ import {
 
 const queryHistoryRoutes = Router();
 
-queryHistoryRoutes.use(requireAuthentication);
+queryHistoryRoutes.use(requireAuthentication, requireVerifiedEmail);
 
 function getAuthenticatedUserId(request: AuthenticatedRequest): number {
     return request.auth!.userId;
