@@ -47,6 +47,7 @@ import {
     mapAppViewToFeedbackView,
     remainingFeedbackCharacters
 } from "./feedbackWidget.js";
+import { buildBulaQuestion, filterBulaNames, formatBulaCount } from "./bulasList.js";
 
 // Lê e remove o token de "#redefinir=<token>" da URL antes de qualquer outro código
 // (tema, consentimento de cookies/GA, bootstrap de login). O token nunca é guardado em
@@ -644,6 +645,10 @@ const medicationInstructionsInput = document.querySelector("#medication-instruct
 const medicationFeedback = document.querySelector("#medication-feedback");
 const medicationList = document.querySelector("#medication-list");
 const addMedicationButton = document.querySelector("#add-medication-button");
+const bulasSearchInput = document.querySelector("#bulas-search");
+const bulasCount = document.querySelector("#bulas-count");
+const bulasFeedback = document.querySelector("#bulas-feedback");
+const bulasList = document.querySelector("#bulas-list");
 const reminderWizardTitle = document.querySelector("#reminder-wizard-title");
 const reminderWizardForm = document.querySelector("#reminder-wizard-form");
 const wizardMedicationInput = document.querySelector("#wizard-medication");
@@ -685,6 +690,8 @@ let wizardDayMode = "all";
 let wizardWeekdays = [];
 let wizardDurationMode = "forever";
 let wizardChannels = ["browser"];
+let allBulaNames = null; // null = ainda não carregado nesta sessão
+let bulasLoadPromise = null;
 
 function setMedicationFeedback(message = "", type = "") {
     medicationFeedback.textContent = message;
@@ -904,6 +911,80 @@ async function deleteMedication(id, name) {
         setMedicationFeedback(error instanceof Error ? error.message : "Não foi possível excluir o medicamento.", "error");
     }
 }
+
+function setBulasFeedback(message = "", type = "") {
+    bulasFeedback.textContent = message;
+    bulasFeedback.className = `bulas-feedback${type ? ` feedback-${type}` : ""}`;
+}
+
+function renderBulasList(names) {
+    bulasList.replaceChildren();
+    bulasCount.textContent = formatBulaCount(names.length);
+
+    if (names.length === 0) {
+        const empty = document.createElement("li");
+        empty.className = "bulas-state";
+        empty.textContent = allBulaNames && allBulaNames.length > 0
+            ? "Nenhuma bula encontrada para essa busca."
+            : "Nenhuma bula disponível no momento.";
+        bulasList.append(empty);
+        return;
+    }
+
+    names.forEach((name) => {
+        const item = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "bulas-item";
+        button.textContent = name;
+        button.addEventListener("click", () => {
+            questionInput.value = buildBulaQuestion(name);
+            setView("chat");
+            questionInput.focus();
+            track("bula_list_click");
+        });
+        item.append(button);
+        bulasList.append(item);
+    });
+}
+
+async function loadAvailableBulas() {
+    if (allBulaNames) {
+        renderBulasList(filterBulaNames(allBulaNames, bulasSearchInput.value));
+        return;
+    }
+    if (bulasLoadPromise) return bulasLoadPromise;
+
+    bulasList.setAttribute("aria-busy", "true");
+    setBulasFeedback("");
+    bulasLoadPromise = (async () => {
+        try {
+            const response = await authenticatedFetch("/api/bulas");
+            if (!response.ok) throw new Error("Não foi possível carregar a lista de bulas.");
+            const data = await response.json();
+            if (!data || !Array.isArray(data.bulas)) throw new Error("Resposta inesperada ao carregar as bulas.");
+            allBulaNames = data.bulas;
+            renderBulasList(filterBulaNames(allBulaNames, bulasSearchInput.value));
+        } catch (error) {
+            allBulaNames = null;
+            bulasList.replaceChildren();
+            bulasCount.textContent = "";
+            setBulasFeedback(error instanceof Error ? error.message : "Não foi possível carregar a lista de bulas.", "error");
+        } finally {
+            bulasList.setAttribute("aria-busy", "false");
+        }
+    })();
+    try {
+        await bulasLoadPromise;
+    } finally {
+        bulasLoadPromise = null;
+    }
+}
+
+bulasSearchInput.addEventListener("input", () => {
+    if (!allBulaNames) return;
+    renderBulasList(filterBulaNames(allBulaNames, bulasSearchInput.value));
+});
 
 medicationForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -2550,6 +2631,7 @@ function setView(view) {
     document.querySelector(".chat-panel").hidden = view !== "chat";
     document.querySelector(".history-panel").hidden = view !== "history";
     document.querySelector(".medications-panel").hidden = view !== "medications";
+    document.querySelector(".bulas-panel").hidden = view !== "bulas";
     document.querySelector(".reminders-panel").hidden = view !== "reminders";
     document.querySelector(".telegram-panel").hidden = view !== "telegram";
     document.querySelector(".safety-note").hidden = view !== "chat";
@@ -2571,6 +2653,10 @@ document.querySelectorAll("[data-view]").forEach((button) => button.addEventList
     if (button.dataset.view === "history") {
         loadQueryHistory();
         track("history_open");
+    }
+    if (button.dataset.view === "bulas") {
+        loadAvailableBulas();
+        track("bulas_open");
     }
 }));
 document.querySelector("#new-chat-button").addEventListener("click", () => {

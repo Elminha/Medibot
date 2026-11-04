@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import path from "node:path";
 import bulaRoutes from "./routes/bulaRoutes.js";
+import bulaListRoutes from "./routes/bulaListRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import feedbackRoutes from "./routes/feedbackRoutes.js";
 import medicationRoutes from "./routes/medicationRoutes.js";
@@ -31,6 +32,7 @@ app.get("/health", (_request, response) => {
 });
 
 app.use("/api/bula", bulaRoutes);
+app.use("/api/bulas", bulaListRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/medications", medicationRoutes);
 app.use("/api/reminders", reminderRoutes);
