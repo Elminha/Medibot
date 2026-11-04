@@ -43,6 +43,14 @@ function setupDb({ insertShouldThrow = false }: { insertShouldThrow?: boolean } 
                 : { rows: [], rowCount: 0 };
         }
 
+        if (sql.startsWith("BEGIN") || sql.startsWith("COMMIT") || sql.startsWith("ROLLBACK")) {
+            return { rows: [], rowCount: 0 };
+        }
+
+        if (sql.startsWith("SELECT pg_advisory_xact_lock")) {
+            return { rows: [], rowCount: 0 };
+        }
+
         if (sql.startsWith("SELECT COUNT(*) AS count FROM feedback")) {
             const [userId, since] = params as [number, Date];
             const count = feedbackRows.filter((row) => row.user_id === userId && row.created_at >= since).length;
@@ -62,6 +70,10 @@ function setupDb({ insertShouldThrow = false }: { insertShouldThrow?: boolean } 
     }
 
     mock.method(pool, "query", async (sqlText: string, params?: unknown[]) => handle(sqlText, params));
+    mock.method(pool, "connect", async () => ({
+        query: async (sqlText: string, params?: unknown[]) => handle(sqlText, params),
+        release: () => {}
+    }));
 
     return { feedbackRows };
 }

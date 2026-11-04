@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
     detectFeedbackDevice,
     FEEDBACK_MESSAGE_MAX_LENGTH,
+    getFeedbackBlockedHint,
     isFeedbackFormValid,
     isValidFeedbackRating,
     isValidFeedbackType,
@@ -63,4 +64,19 @@ test("isFeedbackFormValid exige um tipo escolhido e mensagem de 1 a 2000 caracte
     assert.equal(isFeedbackFormValid("bug", ""), false);
     assert.equal(isFeedbackFormValid("bug", "a".repeat(2000)), true);
     assert.equal(isFeedbackFormValid("bug", "a".repeat(2001)), false);
+});
+
+test("getFeedbackBlockedHint mostra o aviso do tipo primeiro quando os dois faltam", () => {
+    assert.equal(getFeedbackBlockedHint(null, ""), "Escolha o tipo de feedback.");
+    assert.equal(getFeedbackBlockedHint(null, "mensagem válida"), "Escolha o tipo de feedback.");
+});
+
+test("getFeedbackBlockedHint avisa sobre a mensagem quando só ela falta", () => {
+    assert.equal(getFeedbackBlockedHint("bug", ""), "Escreva uma mensagem.");
+    assert.equal(getFeedbackBlockedHint("bug", "   "), "Escreva uma mensagem.");
+    assert.equal(getFeedbackBlockedHint("bug", "a".repeat(2001)), "Escreva uma mensagem.");
+});
+
+test("getFeedbackBlockedHint some quando tipo e mensagem estão ok", () => {
+    assert.equal(getFeedbackBlockedHint("bug", "mensagem válida"), "");
 });

@@ -702,6 +702,8 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 .feedback-dialog-header h3 { margin: 0; color: var(--text); font-size: 1.05rem; }
 .feedback-dialog-form { display: flex; flex-direction: column; gap: var(--space-4); }
 
+.feedback-divider { border: 0; border-top: 1px solid var(--border-soft); margin: 0; }
+
 .feedback-rating { display: flex; gap: 6px; }
 .feedback-star {
     border: 0; background: transparent; padding: 2px; color: var(--border); font-size: 1.6rem; line-height: 1;
@@ -718,6 +720,9 @@ html[data-theme="dark"] .theme-toggle .label-dark { display: none; }
 
 .feedback-privacy-note { margin: 0; color: var(--text-muted); font-size: .78rem; line-height: 1.5; }
 .feedback-privacy-note .text-button { margin-left: 4px; font-size: inherit; font-weight: 700; }
+
+.feedback-blocked-hint { margin: 0; color: var(--text-muted); font-size: .78rem; }
+.feedback-blocked-hint:empty { display: none; }
 
 @media (max-width: 480px) {
     .feedback-dialog { padding: 18px; }

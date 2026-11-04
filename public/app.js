@@ -42,6 +42,7 @@ import {
 import {
     detectFeedbackDevice,
     FEEDBACK_MESSAGE_MAX_LENGTH,
+    getFeedbackBlockedHint,
     isFeedbackFormValid,
     mapAppViewToFeedbackView,
     remainingFeedbackCharacters
@@ -187,12 +188,19 @@ function trackPageView(view) {
     });
 }
 
+// Reatribuído mais abaixo (seção do widget de feedback) para esconder o botão
+// flutuante enquanto o banner estiver visível; antes disso, como o botão já
+// começa escondido (usuário ainda não logado), o no-op abaixo não causa problema.
+let cookieBannerVisibilityListener = () => {};
+
 function hideCookieBanner() {
     if (cookieBanner) cookieBanner.hidden = true;
+    cookieBannerVisibilityListener();
 }
 
 function showCookieBanner() {
     if (cookieBanner) cookieBanner.hidden = false;
+    cookieBannerVisibilityListener();
 }
 
 function initCookieConsent() {
@@ -407,14 +415,16 @@ function showAuthentication(message = "") {
     window.localStorage.removeItem(authTokenStorageKey);
     clearApplicationData();
     closeFeedbackDialog();
-    feedbackFab.hidden = true;
+    isFeedbackFabAllowed = false;
+    updateFeedbackFabVisibility();
     showLogin(message);
 }
 
 function showApplication(user) {
     authView.hidden = true;
     authenticatedApp.hidden = false;
-    feedbackFab.hidden = false;
+    isFeedbackFabAllowed = true;
+    updateFeedbackFabVisibility();
     loggedUser.textContent = user.name ? `Olá, ${user.name}` : "Usuário autenticado";
     if (userAvatar) userAvatar.textContent = user.name?.trim()?.charAt(0)?.toUpperCase() || "M";
     currentAuthUserId = user.id;
@@ -2733,14 +2743,26 @@ const feedbackMessageInput = document.querySelector("#feedback-message");
 const feedbackCounter = document.querySelector("#feedback-counter");
 const feedbackContactOkInput = document.querySelector("#feedback-contact-ok");
 const feedbackPrivacyLink = document.querySelector("#feedback-privacy-link");
+const feedbackBlockedHint = document.querySelector("#feedback-blocked-hint");
 const feedbackDialogFeedback = document.querySelector("#feedback-dialog-feedback");
 const feedbackSubmitButton = document.querySelector("#feedback-submit-button");
 
 let feedbackSelectedType = null;
 let feedbackSelectedRating = null;
+let isFeedbackFabAllowed = false;
+
+// Esconde o fab enquanto o banner de cookies estiver visível (eles colidiriam no
+// mesmo canto em telas pequenas), além de respeitar se o usuário está logado.
+function updateFeedbackFabVisibility() {
+    feedbackFab.hidden = !isFeedbackFabAllowed || Boolean(cookieBanner && !cookieBanner.hidden);
+}
+
+cookieBannerVisibilityListener = updateFeedbackFabVisibility;
 
 function updateFeedbackSubmitState() {
-    feedbackSubmitButton.disabled = !isFeedbackFormValid(feedbackSelectedType, feedbackMessageInput.value);
+    const hint = getFeedbackBlockedHint(feedbackSelectedType, feedbackMessageInput.value);
+    feedbackSubmitButton.disabled = hint !== "";
+    feedbackBlockedHint.textContent = hint;
 }
 
 function renderFeedbackRating() {
@@ -2840,7 +2862,7 @@ function openFeedbackDialog() {
     feedbackDialogBackdrop.hidden = false;
     document.addEventListener("keydown", onFeedbackDialogKeyDown);
     feedbackDialogBackdrop.addEventListener("click", onFeedbackBackdropClick);
-    feedbackTypeButtons[0].focus();
+    feedbackStars[0].focus();
 }
 
 function closeFeedbackDialog() {

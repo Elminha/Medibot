@@ -45,3 +45,17 @@ export function isFeedbackFormValid(type, message) {
     const trimmedLength = typeof message === "string" ? message.trim().length : 0;
     return trimmedLength >= 1 && trimmedLength <= FEEDBACK_MESSAGE_MAX_LENGTH;
 }
+
+/** Texto do aviso acima do botão Enviar quando o envio está bloqueado; "" quando tudo está preenchido. */
+export function getFeedbackBlockedHint(type, message) {
+    if (!isValidFeedbackType(type)) {
+        return "Escolha o tipo de feedback.";
+    }
+
+    const trimmedLength = typeof message === "string" ? message.trim().length : 0;
+    if (trimmedLength < 1 || trimmedLength > FEEDBACK_MESSAGE_MAX_LENGTH) {
+        return "Escreva uma mensagem.";
+    }
+
+    return "";
+}
