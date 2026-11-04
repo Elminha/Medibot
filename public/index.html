@@ -437,6 +437,63 @@
         </div>
     </div>
 
+    <button type="button" class="feedback-fab" id="feedback-fab" aria-haspopup="dialog" aria-controls="feedback-dialog" aria-label="Enviar feedback" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg>
+    </button>
+
+    <div class="feedback-dialog-backdrop" id="feedback-dialog-backdrop" hidden>
+        <div class="feedback-dialog" id="feedback-dialog" role="dialog" aria-modal="true" aria-labelledby="feedback-dialog-title">
+            <div class="feedback-dialog-header">
+                <h3 id="feedback-dialog-title">Enviar feedback</h3>
+                <button type="button" class="icon-button" id="feedback-dialog-close" aria-label="Fechar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <form class="feedback-dialog-form" id="feedback-form" novalidate>
+                <div class="wizard-step">
+                    <p class="wizard-step-label" id="feedback-type-label">Tipo</p>
+                    <div class="wizard-chip-group" id="feedback-type-options" role="group" aria-labelledby="feedback-type-label">
+                        <button type="button" class="wizard-chip" data-feedback-type="bug" aria-pressed="false">Bug</button>
+                        <button type="button" class="wizard-chip" data-feedback-type="sugestao" aria-pressed="false">Sugestão</button>
+                        <button type="button" class="wizard-chip" data-feedback-type="elogio" aria-pressed="false">Elogio</button>
+                        <button type="button" class="wizard-chip" data-feedback-type="outro" aria-pressed="false">Outro</button>
+                    </div>
+                </div>
+
+                <div class="wizard-step">
+                    <p class="wizard-step-label" id="feedback-rating-label">Nota <span>(opcional)</span></p>
+                    <div class="feedback-rating" id="feedback-rating" role="radiogroup" aria-labelledby="feedback-rating-label">
+                        <button type="button" class="feedback-star" data-rating="1" role="radio" aria-checked="false" tabindex="0" aria-label="1 estrela">★</button>
+                        <button type="button" class="feedback-star" data-rating="2" role="radio" aria-checked="false" tabindex="-1" aria-label="2 estrelas">★</button>
+                        <button type="button" class="feedback-star" data-rating="3" role="radio" aria-checked="false" tabindex="-1" aria-label="3 estrelas">★</button>
+                        <button type="button" class="feedback-star" data-rating="4" role="radio" aria-checked="false" tabindex="-1" aria-label="4 estrelas">★</button>
+                        <button type="button" class="feedback-star" data-rating="5" role="radio" aria-checked="false" tabindex="-1" aria-label="5 estrelas">★</button>
+                    </div>
+                </div>
+
+                <label class="feedback-message-label" for="feedback-message">
+                    Mensagem
+                    <textarea id="feedback-message" name="message" rows="4" maxlength="2000" required></textarea>
+                </label>
+                <p class="feedback-counter" id="feedback-counter" aria-live="polite">2000 caracteres restantes</p>
+
+                <label class="feedback-checkbox">
+                    <input type="checkbox" id="feedback-contact-ok" />
+                    Pode entrar em contato comigo pelo e-mail da minha conta
+                </label>
+
+                <p class="feedback-privacy-note">
+                    Não escreva dados pessoais nem informações de saúde.
+                    <button type="button" class="text-button" id="feedback-privacy-link">Privacidade e cookies</button>
+                </p>
+
+                <p class="reminder-feedback" id="feedback-dialog-feedback" role="alert"></p>
+
+                <button class="primary-button" type="submit" id="feedback-submit-button">Enviar</button>
+            </form>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
     <script src="/app.js" type="module"></script>

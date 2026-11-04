@@ -3,6 +3,7 @@ import express from "express";
 import path from "node:path";
 import bulaRoutes from "./routes/bulaRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
+import feedbackRoutes from "./routes/feedbackRoutes.js";
 import medicationRoutes from "./routes/medicationRoutes.js";
 import queryHistoryRoutes from "./routes/queryHistoryRoutes.js";
 import reminderRoutes from "./routes/reminderRoutes.js";
@@ -35,6 +36,7 @@ app.use("/api/medications", medicationRoutes);
 app.use("/api/reminders", reminderRoutes);
 app.use("/api/queries", queryHistoryRoutes);
 app.use("/api/telegram", telegramRoutes);
+app.use("/api/feedback", feedbackRoutes);
 // Sem autenticação de usuário: protegida só pelo segredo CRON_SECRET (ver
 // internalReminderDispatchRoutes.ts). Chamada pelo pg_cron/pg_net do Supabase.
 app.use("/api/internal/reminders", internalReminderDispatchRoutes);
