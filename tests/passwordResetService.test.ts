@@ -24,6 +24,7 @@ const pool = getDatabasePool();
 interface FakeUser {
     id: number;
     email: string;
+    email_verified_at?: Date | null;
 }
 
 interface FakeTokenRow {
@@ -117,7 +118,10 @@ function setupDb() {
         if (text.startsWith("UPDATE users SET password_hash")) {
             const [passwordHash, userId] = params as [string, number];
             const user = users.find((u) => u.id === userId);
-            if (user) (user as FakeUser & { password_hash?: string }).password_hash = passwordHash;
+            if (user) {
+                (user as FakeUser & { password_hash?: string }).password_hash = passwordHash;
+                if (!user.email_verified_at) user.email_verified_at = new Date();
+            }
             return { rows: [], rowCount: user ? 1 : 0 };
         }
 
@@ -288,6 +292,41 @@ test("confirmPasswordReset: token válido troca a senha e invalida os demais tok
 
     assert.equal(outcome, "ok");
     assert.ok(tokens.every((t) => t.used_at !== null));
+});
+
+test("confirmPasswordReset: redefinir a senha com sucesso também marca o e-mail como verificado", async () => {
+    const { tokens, users } = setupDb();
+    const now = new Date();
+    tokens.push({
+        user_id: 1,
+        token_hash: createHash("sha256").update("prova-posse").digest("hex"),
+        expires_at: new Date(now.getTime() + 60_000),
+        used_at: null
+    });
+    assert.equal(users[0].email_verified_at, undefined);
+
+    const outcome = await confirmPasswordReset("prova-posse", "novaSenhaForte1", "203.0.113.20");
+
+    assert.equal(outcome, "ok");
+    assert.ok(users[0].email_verified_at instanceof Date);
+});
+
+test("confirmPasswordReset: não sobrescreve a data de verificação se o e-mail já estava verificado", async () => {
+    const { tokens, users } = setupDb();
+    const alreadyVerifiedAt = new Date("2026-01-01T00:00:00.000Z");
+    users[0].email_verified_at = alreadyVerifiedAt;
+    const now = new Date();
+    tokens.push({
+        user_id: 1,
+        token_hash: createHash("sha256").update("ja-verificado").digest("hex"),
+        expires_at: new Date(now.getTime() + 60_000),
+        used_at: null
+    });
+
+    const outcome = await confirmPasswordReset("ja-verificado", "novaSenhaForte1", "203.0.113.21");
+
+    assert.equal(outcome, "ok");
+    assert.equal(users[0].email_verified_at.getTime(), alreadyVerifiedAt.getTime());
 });
 
 test("confirmPasswordReset: uso único mesmo com duas confirmações simultâneas do mesmo token", async () => {

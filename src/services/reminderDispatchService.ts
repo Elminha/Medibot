@@ -1,4 +1,5 @@
 import { getOccurrencesInWindow, type OccurrenceReminder } from "./reminderOccurrences.js";
+import { isEmailVerificationRequired } from "./emailVerificationService.js";
 
 export const DEFAULT_WINDOW_MS = 5 * 60_000;
 export const DEFAULT_STUCK_SENDING_AFTER_MS = 2 * 60_000;
@@ -69,12 +70,16 @@ interface DispatchCandidateRow {
     times: string[] | null;
     weekdays: number[] | null;
     chat_id: string | null;
+    email: string | null;
+    email_verified_at: string | Date | null;
 }
 
 export interface DispatchCandidate extends OccurrenceReminder {
     id: number;
     medicationName: string;
     chatId: number | undefined;
+    // Conta sem e-mail (legado) é tratada como verificada: nada para confirmar.
+    emailVerified: boolean;
 }
 
 /**
@@ -101,7 +106,9 @@ export async function fetchTelegramDispatchCandidates(pool: DispatchPool): Promi
                  FROM reminder_weekdays rw WHERE rw.reminder_id = r.id),
                 '{}'
             ) AS weekdays,
-            u.telegram_chat_id AS chat_id
+            u.telegram_chat_id AS chat_id,
+            u.email AS email,
+            u.email_verified_at AS email_verified_at
          FROM reminders r
          INNER JOIN reminder_channels rc ON rc.reminder_id = r.id AND rc.channel = 'telegram'
          INNER JOIN medications m ON m.id = r.medication_id
@@ -117,7 +124,8 @@ export async function fetchTelegramDispatchCandidates(pool: DispatchPool): Promi
         weekdays: row.weekdays ?? [],
         startsOn: row.starts_on,
         endsOn: row.ends_on,
-        chatId: row.chat_id !== null ? Number(row.chat_id) : undefined
+        chatId: row.chat_id !== null ? Number(row.chat_id) : undefined,
+        emailVerified: row.email === null || row.email_verified_at !== null
     }));
 }
 
@@ -266,23 +274,44 @@ export async function runReminderDispatch(deps: DispatchDeps, options: DispatchO
         expiredOutsideWindow
     };
 
+    // Enquanto a flag estiver ligada, conta vinculada mas com e-mail pendente de
+    // confirmação não recebe lembretes (mesmo bloqueio do site e do bot, ver
+    // requireVerifiedEmail/telegramBot.ts), tratada como "sem destino" para o envio.
+    const blockUnverified = isEmailVerificationRequired();
+    const isUnsendable = (item: DueItem): boolean =>
+        item.candidate.chatId === undefined || (blockUnverified && !item.candidate.emailVerified);
+
     if (options.dryRun) {
-        summary.skipped = dueItems.filter((item) => item.candidate.chatId === undefined).length;
+        summary.skipped = dueItems.filter(isUnsendable).length;
         return summary;
     }
 
-    const skippedItems = dueItems.filter((item) => item.candidate.chatId === undefined);
+    const skippedItems = dueItems.filter(isUnsendable);
     for (const item of skippedItems) {
-        await insertSkippedDelivery(deps.pool, item.candidate.id, item.occurrenceAt);
-        summary.skipped += 1;
+        try {
+            await insertSkippedDelivery(deps.pool, item.candidate.id, item.occurrenceAt);
+            summary.skipped += 1;
+        } catch (error) {
+            // O lembrete (ou a conta) pode ter sido apagado entre a busca de candidatos e
+            // aqui (ex.: exclusão da própria conta em paralelo, ver accountService.ts): a
+            // FK para reminders passa a falhar, mas isso nunca pode derrubar o restante do
+            // lote, que é de outros usuários.
+            console.error(`Despachante de lembretes: não foi possível registrar 'skipped' para o lembrete ${item.candidate.id}.`, error);
+        }
     }
 
     const sendableItems = dueItems
-        .filter((item) => item.candidate.chatId !== undefined)
+        .filter((item) => !isUnsendable(item))
         .slice(0, maxSendsPerRun);
 
     await processBatches(sendableItems, concurrency, async (item) => {
-        const claimed = await claimDelivery(deps.pool, item.candidate.id, item.occurrenceAt, stuckAfterMs);
+        let claimed: ClaimResult | null;
+        try {
+            claimed = await claimDelivery(deps.pool, item.candidate.id, item.occurrenceAt, stuckAfterMs);
+        } catch (error) {
+            console.error(`Despachante de lembretes: não foi possível reivindicar o envio do lembrete ${item.candidate.id}.`, error);
+            return;
+        }
         if (!claimed) {
             return;
         }

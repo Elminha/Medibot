@@ -6,11 +6,18 @@ import {
     InvalidCredentialsError,
     loginUser,
     registerUser,
+    TooManyRegistrationAttemptsError,
     ValidationError,
     type LoginInput,
     type RegisterInput
 } from "../services/authService.js";
 import { confirmPasswordReset, isPasswordResetEnabled, requestPasswordReset } from "../services/passwordResetService.js";
+import {
+    confirmEmailVerification,
+    isEmailVerificationRequired,
+    issueAndSendVerificationToken,
+    resendVerificationEmail
+} from "../services/emailVerificationService.js";
 
 const authRoutes = Router();
 
@@ -32,12 +39,20 @@ function parseResetPasswordInput(body: unknown): { token: string; password: stri
         : undefined;
 }
 
+function parseVerifyEmailInput(body: unknown): string | undefined {
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return undefined;
+    }
+    const { token } = body as Record<string, unknown>;
+    return typeof token === "string" && token.trim() ? token : undefined;
+}
+
 function parseRegisterInput(body: unknown): RegisterInput | undefined {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
         return undefined;
     }
 
-    const { name, email, password, phone, timezone } = body as Record<string, unknown>;
+    const { name, email, password, phone, timezone, termsAccepted } = body as Record<string, unknown>;
     if (typeof name !== "string" || typeof password !== "string") {
         return undefined;
     }
@@ -50,8 +65,11 @@ function parseRegisterInput(body: unknown): RegisterInput | undefined {
     if (timezone !== undefined && typeof timezone !== "string") {
         return undefined;
     }
+    if (termsAccepted !== undefined && typeof termsAccepted !== "boolean") {
+        return undefined;
+    }
 
-    return { name, email, password, phone, timezone };
+    return { name, email, password, phone, timezone, termsAccepted };
 }
 
 function parseLoginInput(body: unknown): LoginInput | undefined {
@@ -73,6 +91,9 @@ function sendAuthError(response: Response, error: unknown): Response | undefined
     if (error instanceof AccountAlreadyExistsError) {
         return response.status(409).json({ error: error.message });
     }
+    if (error instanceof TooManyRegistrationAttemptsError) {
+        return response.status(429).json({ error: error.message });
+    }
     if (error instanceof InvalidCredentialsError) {
         return response.status(401).json({ error: error.message });
     }
@@ -87,6 +108,20 @@ authRoutes.post("/register", async (request: Request, response: Response) => {
 
     try {
         const result = await registerUser(input);
+
+        // Best-effort: a conta já foi criada (sem verificar) mesmo que o envio falhe
+        // (ex.: SMTP não configurado). O usuário pode pedir reenvio depois.
+        if (isEmailVerificationRequired() && result.user.email) {
+            try {
+                await issueAndSendVerificationToken(result.user.id, result.user.email);
+            } catch (error) {
+                console.error(
+                    "Não foi possível enviar o e-mail de verificação no cadastro.",
+                    error instanceof Error ? error.message : error
+                );
+            }
+        }
+
         return response.status(201).json(result);
     } catch (error) {
         return sendAuthError(response, error)
@@ -114,7 +149,10 @@ authRoutes.get("/me", requireAuthentication, (request: AuthenticatedRequest, res
 });
 
 authRoutes.get("/capabilities", (_request: Request, response: Response) => {
-    return response.json({ passwordReset: isPasswordResetEnabled() });
+    return response.json({
+        passwordReset: isPasswordResetEnabled(),
+        emailVerificationRequired: isEmailVerificationRequired()
+    });
 });
 
 authRoutes.post("/forgot-password", async (request: Request, response: Response) => {
@@ -166,5 +204,49 @@ authRoutes.post("/reset-password", async (request: Request, response: Response) 
         return response.status(500).json({ error: "Não foi possível redefinir a senha." });
     }
 });
+
+authRoutes.post("/verify-email", async (request: Request, response: Response) => {
+    const token = parseVerifyEmailInput(request.body);
+    if (!token) {
+        return response.status(400).json({ error: "Informe o token de verificação." });
+    }
+
+    try {
+        const outcome = await confirmEmailVerification(token);
+        if (outcome === "invalid") {
+            return response.status(400).json({ error: "Link inválido ou expirado." });
+        }
+        return response.status(200).json({ message: "E-mail confirmado com sucesso." });
+    } catch (error) {
+        console.error("Falha inesperada ao confirmar e-mail.", error instanceof Error ? error.message : error);
+        return response.status(500).json({ error: "Não foi possível confirmar o e-mail." });
+    }
+});
+
+// Autenticada (precisa saber de quem é o e-mail), mas sem requireVerifiedEmail: é
+// exatamente a rota que um usuário não verificado precisa conseguir chamar.
+authRoutes.post(
+    "/resend-verification",
+    requireAuthentication,
+    async (request: AuthenticatedRequest, response: Response) => {
+        try {
+            const outcome = await resendVerificationEmail(request.auth!.userId);
+
+            switch (outcome) {
+                case "ok":
+                    return response.status(200).json({ message: "E-mail de verificação reenviado." });
+                case "already-verified":
+                    return response.status(200).json({ message: "Seu e-mail já está confirmado." });
+                case "no-email":
+                    return response.status(400).json({ error: "Esta conta não tem e-mail cadastrado." });
+                case "rate-limited":
+                    return response.status(429).json({ error: "Muitas tentativas. Tente novamente mais tarde." });
+            }
+        } catch (error) {
+            console.error("Falha inesperada ao reenviar e-mail de verificação.", error instanceof Error ? error.message : error);
+            return response.status(500).json({ error: "Não foi possível reenviar o e-mail de verificação." });
+        }
+    }
+);
 
 export default authRoutes;

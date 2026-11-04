@@ -48,6 +48,7 @@ import {
     remainingFeedbackCharacters
 } from "./feedbackWidget.js";
 import { buildBulaQuestion, filterBulaNames, formatBulaCount } from "./bulasList.js";
+import { formatResendCooldownLabel, maskEmail, resolveAfterVerificationAction } from "./emailVerification.js";
 
 // Lê e remove o token de "#redefinir=<token>" da URL antes de qualquer outro código
 // (tema, consentimento de cookies/GA, bootstrap de login). O token nunca é guardado em
@@ -58,6 +59,14 @@ let pendingPasswordResetToken = null;
     const match = /^#redefinir=(.+)$/.exec(window.location.hash);
     if (!match) return;
     pendingPasswordResetToken = decodeURIComponent(match[1]);
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+})();
+
+let pendingEmailVerificationToken = null;
+(function consumeEmailVerificationTokenFromHash() {
+    const match = /^#verificar-email=(.+)$/.exec(window.location.hash);
+    if (!match) return;
+    pendingEmailVerificationToken = decodeURIComponent(match[1]);
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
 })();
 
@@ -83,6 +92,15 @@ const resetPasswordForm = document.querySelector("#reset-password-form");
 const forgotPasswordFeedback = document.querySelector("#forgot-password-feedback");
 const resetPasswordFeedback = document.querySelector("#reset-password-feedback");
 const resetPasswordRequestNew = document.querySelector("#reset-password-request-new");
+const emailVerificationPanel = document.querySelector("#email-verification-panel");
+const emailVerificationMaskedEmail = document.querySelector("#email-verification-masked-email");
+const emailVerificationFeedback = document.querySelector("#email-verification-feedback");
+const emailVerificationResendButton = document.querySelector("#email-verification-resend-button");
+const emailVerificationLogoutButton = document.querySelector("#email-verification-logout-button");
+const verifyEmailPanel = document.querySelector("#verify-email-panel");
+const verifyEmailDescription = document.querySelector("#verify-email-description");
+const verifyEmailFeedback = document.querySelector("#verify-email-feedback");
+const verifyEmailLoginWrapper = document.querySelector("#verify-email-login-wrapper");
 const loggedUser = document.querySelector("#logged-user");
 const userAvatar = document.querySelector(".user-avatar");
 const historyList = document.querySelector("#history-list");
@@ -132,7 +150,7 @@ const cookieBanner = document.querySelector("#cookie-banner");
 const cookieBannerHint = document.querySelector("#cookie-banner-hint");
 const cookieAcceptButton = document.querySelector("#cookie-accept");
 const cookieRejectButton = document.querySelector("#cookie-reject");
-const privacyCookiesLink = document.querySelector("#privacy-cookies-link");
+const privacyCookiesLink = document.querySelector("#cookie-preferences-link");
 const viewPageMeta = {
     chat: { title: "Conversar", path: "/conversar" },
     history: { title: "Histórico", path: "/historico" },
@@ -315,10 +333,87 @@ function confirmDialog(message, { title = "Confirmar", confirmLabel = "Excluir" 
     });
 }
 
+// ===== Excluir a própria conta =====
+
+const deleteAccountButton = document.querySelector("#delete-account-button");
+const deleteAccountDialogBackdrop = document.querySelector("#delete-account-dialog-backdrop");
+const deleteAccountForm = document.querySelector("#delete-account-form");
+const deleteAccountPasswordInput = document.querySelector("#delete-account-password");
+const deleteAccountConfirmTextInput = document.querySelector("#delete-account-confirm-text");
+const deleteAccountFeedback = document.querySelector("#delete-account-feedback");
+const deleteAccountCancelButton = document.querySelector("#delete-account-cancel");
+const deleteAccountSubmitButton = document.querySelector("#delete-account-submit");
+const DELETE_ACCOUNT_CONFIRM_WORD = "EXCLUIR";
+
+function updateDeleteAccountSubmitState() {
+    deleteAccountSubmitButton.disabled = !(
+        deleteAccountPasswordInput.value.length > 0
+        && deleteAccountConfirmTextInput.value === DELETE_ACCOUNT_CONFIRM_WORD
+    );
+}
+
+function closeDeleteAccountDialog() {
+    deleteAccountDialogBackdrop.hidden = true;
+    deleteAccountForm.reset();
+    deleteAccountFeedback.textContent = "";
+    updateDeleteAccountSubmitState();
+}
+
+function openDeleteAccountDialog() {
+    deleteAccountDialogBackdrop.hidden = false;
+    deleteAccountPasswordInput.focus();
+}
+
+deleteAccountButton?.addEventListener("click", openDeleteAccountDialog);
+deleteAccountCancelButton.addEventListener("click", closeDeleteAccountDialog);
+deleteAccountDialogBackdrop.addEventListener("click", (event) => {
+    if (event.target === deleteAccountDialogBackdrop) closeDeleteAccountDialog();
+});
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !deleteAccountDialogBackdrop.hidden) closeDeleteAccountDialog();
+});
+deleteAccountPasswordInput.addEventListener("input", updateDeleteAccountSubmitState);
+deleteAccountConfirmTextInput.addEventListener("input", updateDeleteAccountSubmitState);
+
+deleteAccountForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    deleteAccountFeedback.textContent = "";
+    deleteAccountSubmitButton.disabled = true;
+
+    try {
+        const response = await authenticatedFetch("/api/account", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: deleteAccountPasswordInput.value })
+        });
+
+        if (!response.ok) {
+            deleteAccountFeedback.textContent = await readError(response, "Não foi possível excluir a conta.");
+            updateDeleteAccountSubmitState();
+            return;
+        }
+
+        track("account_deleted");
+        deleteAccountDialogBackdrop.hidden = true;
+        deleteAccountForm.reset();
+        showAuthentication("Sua conta foi excluída com sucesso.");
+        loginFeedback.classList.add("success");
+    } catch (error) {
+        if (error?.message === "authentication-required" || error?.message === "email-not-verified") return;
+        deleteAccountFeedback.textContent = "Não foi possível excluir a conta. Verifique sua conexão e tente novamente.";
+        updateDeleteAccountSubmitState();
+    }
+});
+
 let isWaiting = false;
 let notificationScheduler = null;
 let reminderRefreshTimer = null;
 let currentAuthUserId = null;
+let currentAuthUserEmail = null;
+let emailVerificationRequired = false;
+let resendCooldownTimer = null;
+let resendAvailableAt = 0;
+const RESEND_COOLDOWN_SECONDS = 60;
 
 function getAuthToken() {
     return window.localStorage.getItem(authTokenStorageKey)?.trim() || "";
@@ -338,6 +433,13 @@ async function authenticatedFetch(url, options = {}) {
         showAuthentication();
         throw new Error("authentication-required");
     }
+    if (response.status === 403) {
+        const data = await response.clone().json().catch(() => null);
+        if (data?.code === "EMAIL_NOT_VERIFIED") {
+            showEmailVerificationRequired({ email: currentAuthUserEmail });
+            throw new Error("email-not-verified");
+        }
+    }
     return response;
 }
 
@@ -348,6 +450,8 @@ function showLogin(message = "", success = false) {
     registerPanel.hidden = true;
     forgotPasswordPanel.hidden = true;
     resetPasswordPanel.hidden = true;
+    emailVerificationPanel.hidden = true;
+    verifyEmailPanel.hidden = true;
     loginFeedback.textContent = message;
     loginFeedback.classList.toggle("success", success);
 }
@@ -357,6 +461,8 @@ function showRegister() {
     registerPanel.hidden = false;
     forgotPasswordPanel.hidden = true;
     resetPasswordPanel.hidden = true;
+    emailVerificationPanel.hidden = true;
+    verifyEmailPanel.hidden = true;
     loginFeedback.textContent = "";
     registerFeedback.textContent = "";
     registerFeedback.classList.remove("success");
@@ -368,6 +474,8 @@ function showForgotPassword() {
     registerPanel.hidden = true;
     forgotPasswordPanel.hidden = false;
     resetPasswordPanel.hidden = true;
+    emailVerificationPanel.hidden = true;
+    verifyEmailPanel.hidden = true;
     loginFeedback.textContent = "";
     forgotPasswordFeedback.textContent = "";
     forgotPasswordFeedback.classList.remove("success");
@@ -381,15 +489,125 @@ function showResetPassword() {
     registerPanel.hidden = true;
     forgotPasswordPanel.hidden = true;
     resetPasswordPanel.hidden = false;
+    emailVerificationPanel.hidden = true;
+    verifyEmailPanel.hidden = true;
     resetPasswordFeedback.textContent = "";
     resetPasswordFeedback.classList.remove("success");
     resetPasswordRequestNew.hidden = true;
     document.querySelector("#reset-password-password").focus();
 }
 
+function resetResendCooldown() {
+    if (resendCooldownTimer) clearInterval(resendCooldownTimer);
+    resendCooldownTimer = null;
+    resendAvailableAt = 0;
+    emailVerificationResendButton.disabled = false;
+    emailVerificationResendButton.textContent = "Reenviar e-mail";
+}
+
+function updateResendCooldownLabel() {
+    const label = formatResendCooldownLabel(resendAvailableAt - Date.now());
+    if (!label) {
+        resetResendCooldown();
+        return;
+    }
+    emailVerificationResendButton.textContent = label;
+}
+
+function startResendCooldown(seconds = RESEND_COOLDOWN_SECONDS) {
+    resendAvailableAt = Date.now() + seconds * 1000;
+    emailVerificationResendButton.disabled = true;
+    updateResendCooldownLabel();
+    if (resendCooldownTimer) clearInterval(resendCooldownTimer);
+    resendCooldownTimer = setInterval(updateResendCooldownLabel, 1000);
+}
+
+function showEmailVerificationRequired(user) {
+    if (user?.email) currentAuthUserEmail = user.email;
+
+    authView.hidden = false;
+    authenticatedApp.hidden = true;
+    loginPanel.hidden = true;
+    registerPanel.hidden = true;
+    forgotPasswordPanel.hidden = true;
+    resetPasswordPanel.hidden = true;
+    verifyEmailPanel.hidden = true;
+    emailVerificationPanel.hidden = false;
+    emailVerificationFeedback.textContent = "";
+    emailVerificationFeedback.classList.remove("success");
+    emailVerificationMaskedEmail.textContent = maskEmail(currentAuthUserEmail || "");
+    resetResendCooldown();
+}
+
+function showVerifyEmailPanel() {
+    authView.hidden = false;
+    authenticatedApp.hidden = true;
+    loginPanel.hidden = true;
+    registerPanel.hidden = true;
+    forgotPasswordPanel.hidden = true;
+    resetPasswordPanel.hidden = true;
+    emailVerificationPanel.hidden = true;
+    verifyEmailPanel.hidden = false;
+    verifyEmailDescription.textContent = "Confirmando seu e-mail...";
+    verifyEmailFeedback.textContent = "";
+    verifyEmailFeedback.classList.remove("success");
+    verifyEmailLoginWrapper.hidden = true;
+}
+
+/** Tenta continuar direto no app usando o token já guardado neste navegador (sem exigir logout/login de novo). */
+async function tryContinueSessionAfterVerification() {
+    try {
+        const response = await authenticatedFetch("/api/auth/me");
+        const data = await response.json().catch(() => null);
+        if (response.ok && data?.user) {
+            showApplication(data.user);
+            return true;
+        }
+    } catch {
+        // cai para o botão "Ir para o login" abaixo
+    }
+    return false;
+}
+
+async function runEmailVerification(token) {
+    try {
+        const response = await fetch("/api/auth/verify-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token })
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            verifyEmailDescription.textContent = "Não foi possível confirmar seu e-mail.";
+            verifyEmailFeedback.textContent = data?.error || "Link inválido ou expirado.";
+            verifyEmailLoginWrapper.hidden = false;
+            pendingEmailVerificationToken = null;
+            return;
+        }
+
+        verifyEmailDescription.textContent = data?.message || "E-mail confirmado com sucesso.";
+        verifyEmailFeedback.classList.add("success");
+        track("email_verified");
+        pendingEmailVerificationToken = null;
+
+        const action = resolveAfterVerificationAction(Boolean(getAuthToken()));
+        if (action === "continue-session" && (await tryContinueSessionAfterVerification())) {
+            return;
+        }
+        verifyEmailLoginWrapper.hidden = false;
+    } catch {
+        verifyEmailDescription.textContent = "Não foi possível confirmar seu e-mail.";
+        verifyEmailFeedback.textContent = "Verifique sua conexão e tente novamente.";
+        verifyEmailLoginWrapper.hidden = false;
+        pendingEmailVerificationToken = null;
+    }
+}
+
 function clearApplicationData() {
     stopReminderNotifications();
     currentAuthUserId = null;
+    currentAuthUserEmail = null;
     messages.replaceChildren();
     document.querySelector(".suggestions").hidden = false;
     addMessage("Olá! Eu sou o MediBot. Posso ajudar você a compreender informações presentes nas bulas dos medicamentos disponíveis no sistema. Faça uma pergunta sobre um medicamento.", "bot");
@@ -422,6 +640,12 @@ function showAuthentication(message = "") {
 }
 
 function showApplication(user) {
+    currentAuthUserEmail = user?.email || null;
+    if (emailVerificationRequired && user.emailVerified === false) {
+        showEmailVerificationRequired(user);
+        return;
+    }
+
     authView.hidden = true;
     authenticatedApp.hidden = false;
     isFeedbackFabAllowed = true;
@@ -2648,6 +2872,15 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("pageshow", () => telegramCountdown.tick());
 
+// Se a confirmação foi feita em outra aba (ex.: abriu o link do e-mail numa aba nova),
+// ao voltar para esta aba (ainda na tela "Confirme seu e-mail") verifica de novo sem
+// exigir logout/login manual.
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && !emailVerificationPanel.hidden) {
+        tryContinueSessionAfterVerification();
+    }
+});
+
 document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => {
     setView(button.dataset.view);
     if (button.dataset.view === "history") {
@@ -2714,7 +2947,10 @@ registerForm.addEventListener("submit", async (event) => {
     const emailConfirm = document.querySelector("#register-email-confirm").value.trim();
     const phone = document.querySelector("#register-phone").value.trim();
     const password = document.querySelector("#register-password").value;
+    const termsCheckbox = document.querySelector("#register-terms");
+    const termsLabel = document.querySelector("#register-terms-label");
     registerFeedback.textContent = "";
+    termsLabel.classList.remove("input-error");
 
     if (!email) {
         registerFeedback.textContent = "Informe um e-mail.";
@@ -2724,17 +2960,28 @@ registerForm.addEventListener("submit", async (event) => {
         registerFeedback.textContent = "Os e-mails informados não coincidem.";
         return;
     }
+    if (!termsCheckbox.checked) {
+        registerFeedback.textContent = "Você precisa aceitar os Termos de Uso e a Política de Privacidade.";
+        termsLabel.classList.add("input-error");
+        termsCheckbox.focus();
+        return;
+    }
 
     try {
         const response = await fetch("/api/auth/register", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, email, phone, password })
+            body: JSON.stringify({ name, email, phone, password, termsAccepted: termsCheckbox.checked })
         });
         if (!response.ok) throw new Error(await readError(response, "Não foi possível criar a conta."));
         registerForm.reset();
         track("sign_up", { method: "email" });
-        showLogin("Conta criada com sucesso. Agora entre com seu e-mail ou telefone e senha.", true);
+        showLogin(
+            emailVerificationRequired
+                ? "Conta criada! Enviamos um e-mail de confirmação. Verifique sua caixa de entrada antes de entrar."
+                : "Conta criada com sucesso. Agora entre com seu e-mail ou telefone e senha.",
+            true
+        );
     } catch (error) {
         registerFeedback.textContent = error instanceof Error ? error.message : "Não foi possível criar a conta.";
     }
@@ -2814,6 +3061,36 @@ document.querySelector("#reset-password-request-new-button").addEventListener("c
 });
 
 document.querySelector("#logout-button").addEventListener("click", () => showAuthentication());
+
+document.querySelector("#verify-email-login-button").addEventListener("click", () => {
+    pendingEmailVerificationToken = null;
+    showLogin();
+});
+
+emailVerificationLogoutButton.addEventListener("click", () => showAuthentication());
+
+emailVerificationResendButton.addEventListener("click", async () => {
+    emailVerificationFeedback.textContent = "";
+    emailVerificationFeedback.classList.remove("success");
+    try {
+        const response = await authenticatedFetch("/api/auth/resend-verification", { method: "POST" });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            emailVerificationFeedback.textContent = data?.error || "Não foi possível reenviar o e-mail.";
+            if (response.status === 429) startResendCooldown();
+            return;
+        }
+
+        emailVerificationFeedback.textContent = data?.message || "E-mail reenviado. Verifique sua caixa de entrada.";
+        emailVerificationFeedback.classList.add("success");
+        startResendCooldown();
+        track("verification_email_resent");
+    } catch (error) {
+        if (error?.message === "authentication-required" || error?.message === "email-not-verified") return;
+        emailVerificationFeedback.textContent = "Não foi possível reenviar o e-mail. Verifique sua conexão.";
+    }
+});
 
 // ===== Widget de feedback (botão flutuante, só para usuário logado) =====
 
@@ -3012,23 +3289,35 @@ feedbackForm.addEventListener("submit", async (event) => {
     }
 });
 
-async function fetchPasswordResetCapability() {
+async function fetchAuthCapabilities() {
     try {
         const response = await fetch("/api/auth/capabilities");
-        if (!response.ok) return false;
+        if (!response.ok) return { passwordReset: false, emailVerificationRequired: false };
         const data = await response.json();
-        return data?.passwordReset === true;
+        return {
+            passwordReset: data?.passwordReset === true,
+            emailVerificationRequired: data?.emailVerificationRequired === true
+        };
     } catch {
-        return false;
+        return { passwordReset: false, emailVerificationRequired: false };
     }
 }
 
 async function initializeApplication() {
-    const passwordResetEnabled = await fetchPasswordResetCapability();
-    document.querySelector("#show-forgot-password-wrapper").hidden = !passwordResetEnabled;
+    const capabilities = await fetchAuthCapabilities();
+    document.querySelector("#show-forgot-password-wrapper").hidden = !capabilities.passwordReset;
+    emailVerificationRequired = capabilities.emailVerificationRequired;
+
+    // Confirmar o e-mail pelo link funciona mesmo com o bloqueio desligado (nunca faz
+    // mal confirmar), então não depende de capabilities.emailVerificationRequired.
+    if (pendingEmailVerificationToken) {
+        showVerifyEmailPanel();
+        await runEmailVerification(pendingEmailVerificationToken);
+        return;
+    }
 
     if (pendingPasswordResetToken) {
-        if (passwordResetEnabled) {
+        if (capabilities.passwordReset) {
             showResetPassword();
             return;
         }

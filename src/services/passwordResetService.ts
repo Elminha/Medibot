@@ -273,8 +273,10 @@ export async function confirmPasswordReset(
         const userId = Number(row.user_id);
         const passwordHash = await hashPassword(newPassword);
 
+        // Provar posse do e-mail redefinindo a senha pelo link também confirma o e-mail
+        // (COALESCE preserva a data original se já estivesse verificado antes).
         await client.query(
-            "UPDATE users SET password_hash = $1, password_changed_at = CURRENT_TIMESTAMP WHERE id = $2;",
+            "UPDATE users SET password_hash = $1, password_changed_at = CURRENT_TIMESTAMP, email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP) WHERE id = $2;",
             [passwordHash, userId]
         );
         await client.query(

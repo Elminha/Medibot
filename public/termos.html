@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <script>
+        (function () {
+            try {
+                var stored = window.localStorage.getItem("medibot_theme");
+                var theme = stored === "light" || stored === "dark"
+                    ? stored
+                    : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+                document.documentElement.setAttribute("data-theme", theme);
+            } catch (error) {
+                document.documentElement.setAttribute("data-theme", "light");
+            }
+        })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Termos de Uso do MediBot." />
+    <title>MediBot | Termos de Uso</title>
+    <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+    <div class="legal-shell">
+        <header class="legal-header">
+            <a class="brand-lockup" href="/">
+                <img class="brand-mark" src="/img/medibot-logo-128.png" alt="" width="34" height="34" />
+                <span>MediBot</span>
+            </a>
+            <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="false">
+                <span class="theme-toggle-icon icon-sun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></span>
+                <span class="theme-toggle-icon icon-moon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span>
+                <span class="theme-toggle-label label-dark">Tema escuro</span>
+                <span class="theme-toggle-label label-light">Tema claro</span>
+            </button>
+        </header>
+
+        <main class="legal-card">
+            <h1>Termos de Uso</h1>
+            <p class="legal-updated">Última atualização: novembro de 2026.</p>
+
+            <h2>1. Natureza do serviço</h2>
+            <p>O MediBot oferece informação educativa extraída das bulas de medicamentos disponíveis no sistema. Ele não substitui consulta, diagnóstico ou orientação de um médico ou farmacêutico. Em caso de emergência, procure atendimento imediato (SAMU 192). Nunca inicie, mude ou interrompa um tratamento com base apenas nas respostas do MediBot.</p>
+
+            <h2>2. Limitações</h2>
+            <p>O MediBot só responde sobre as bulas listadas em "Bulas disponíveis" e pode errar ou interpretar mal uma pergunta. Confira sempre a bula oficial do produto que você tem em mãos e, em caso de dúvida, procure um profissional de saúde.</p>
+
+            <h2>3. Conta e responsabilidade</h2>
+            <p>Você é responsável pelo uso da sua conta e deve informar um e-mail seu. O cadastro exige a confirmação desse e-mail para liberar o uso completo do MediBot.</p>
+
+            <h2>4. Uso aceitável</h2>
+            <p>Não é permitido usar o MediBot para fins ilegais, tentar burlar limites de uso, atacar ou sobrecarregar o sistema, nem enviar dados de terceiros sem autorização.</p>
+
+            <h2>5. Disponibilidade</h2>
+            <p>O MediBot é um projeto acadêmico, oferecido sem garantia de disponibilidade contínua. Ele pode mudar, ter limites de uso ajustados ou ser encerrado a qualquer momento.</p>
+
+            <h2>6. Fontes</h2>
+            <p>O conteúdo das respostas vem de bulas oficiais (versão para o paciente) de medicamentos registrados no Brasil.</p>
+
+            <h2>7. Responsabilidade</h2>
+            <p>Na extensão permitida em lei, a equipe do MediBot não responde por decisões tomadas com base nas respostas do sistema.</p>
+
+            <h2>8. Lei aplicável</h2>
+            <p>Estes termos são regidos pela legislação brasileira. Contato: <a href="mailto:medibot.oficial@gmail.com">medibot.oficial@gmail.com</a>.</p>
+
+            <p class="legal-back"><a href="/">&larr; Voltar para o MediBot</a></p>
+        </main>
+    </div>
+    <script src="/legalPage.js" type="module"></script>
+</body>
+</html>

@@ -75,6 +75,23 @@ function buildPasswordResetEmailContent(resetLink: string): { text: string; html
     return { text, html };
 }
 
+function buildEmailVerificationEmailContent(verificationLink: string): { text: string; html: string } {
+    const text =
+        "Confirme seu e-mail para começar a usar o MediBot.\n\n" +
+        `Acesse o link abaixo para confirmar:\n${verificationLink}\n\n` +
+        "Este link é válido por 24 horas.\n\n" +
+        "Se não foi você quem criou essa conta, ignore este e-mail.";
+
+    const html =
+        "<p>Confirme seu e-mail para começar a usar o MediBot.</p>" +
+        "<p>Acesse o link abaixo para confirmar:</p>" +
+        `<p><a href="${verificationLink}">${verificationLink}</a></p>` +
+        "<p>Este link é válido por 24 horas.</p>" +
+        "<p>Se não foi você quem criou essa conta, ignore este e-mail.</p>";
+
+    return { text, html };
+}
+
 /**
  * Exportado como objeto (não como função solta) para poder ser mockado nos testes com
  * mock.method, no mesmo padrão já usado para `openai.responses.create` e `pool.query`.
@@ -92,6 +109,28 @@ export const emailService = {
                 from: getFromHeader(),
                 to,
                 subject: "Redefinição de senha - MediBot",
+                text,
+                html
+            });
+        } catch (error) {
+            throw new EmailDeliveryError(
+                error instanceof Error ? error.message : "Falha desconhecida ao enviar e-mail."
+            );
+        }
+    },
+
+    async sendEmailVerificationEmail(
+        to: string,
+        verificationLink: string,
+        transporter: Pick<Transporter, "sendMail"> = getTransporter()
+    ): Promise<void> {
+        const { text, html } = buildEmailVerificationEmailContent(verificationLink);
+
+        try {
+            await transporter.sendMail({
+                from: getFromHeader(),
+                to,
+                subject: "Confirme seu e-mail - MediBot",
                 text,
                 html
             });

@@ -1,5 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import { AuthConfigurationError, getAuthenticatedUser, type AuthUser } from "../services/authService.js";
+import { isEmailVerificationRequired } from "../services/emailVerificationService.js";
+
+export const EMAIL_NOT_VERIFIED_CODE = "EMAIL_NOT_VERIFIED";
 
 export interface AuthenticatedRequest extends Request {
     auth?: {
@@ -50,4 +53,26 @@ export async function requireAuthentication(
 
     request.auth = { userId: user.id, user };
     next();
+}
+
+/**
+ * Roda depois de requireAuthentication: bloqueia rotas protegidas enquanto o
+ * e-mail não for confirmado. Não se aplica a /me, /capabilities, /verify-email e
+ * /resend-verification, que ficam fora desse middleware de propósito (ver
+ * authRoutes.ts e os routers que usam requireVerifiedEmail).
+ */
+export function requireVerifiedEmail(
+    request: AuthenticatedRequest,
+    response: Response,
+    next: NextFunction
+): void {
+    if (!isEmailVerificationRequired() || request.auth!.user.emailVerified) {
+        next();
+        return;
+    }
+
+    response.status(403).json({
+        error: "Confirme seu e-mail para continuar.",
+        code: EMAIL_NOT_VERIFIED_CODE
+    });
 }

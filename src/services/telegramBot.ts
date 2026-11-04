@@ -13,6 +13,7 @@ import {
     type QueryHistoryEntry
 } from "./queryHistoryService.js";
 import { hasExceededHourlyLimit } from "./telegramRateLimiter.js";
+import { isEmailVerificationRequired, isEmailVerified } from "./emailVerificationService.js";
 import {
     consumeLinkCode,
     getUserIdByChatId,
@@ -67,6 +68,14 @@ const HELP_MESSAGE = [
 
 const NOT_LINKED_MESSAGE =
     "Este chat ainda não está vinculado a uma conta do MediBot. Acesse MediBot > Lembretes > Conectar Telegram, gere um código e envie /vincular SEUCODIGO aqui.";
+
+const EMAIL_NOT_VERIFIED_MESSAGE =
+    "Confirme seu e-mail para continuar usando o MediBot por aqui. Acesse o site, entre na sua conta e siga as instruções na tela de confirmação.";
+
+/** Conta vinculada mas com e-mail pendente de confirmação (quando a flag estiver ligada): mesmo bloqueio do site. */
+async function isBlockedByUnverifiedEmail(userId: number): Promise<boolean> {
+    return isEmailVerificationRequired() && !(await isEmailVerified(userId));
+}
 
 const RATE_LIMITED_MESSAGE =
     "Você atingiu o limite de perguntas por hora. Tente novamente mais tarde.";
@@ -240,6 +249,10 @@ async function handleHistoryCallback(ctx: Context, chatId: number, action: Histo
         await ctx.answerCallbackQuery({ text: NOT_LINKED_MESSAGE, show_alert: true });
         return;
     }
+    if (await isBlockedByUnverifiedEmail(userId)) {
+        await ctx.answerCallbackQuery({ text: EMAIL_NOT_VERIFIED_MESSAGE, show_alert: true });
+        return;
+    }
 
     if (action.type === "page") {
         await ctx.answerCallbackQuery();
@@ -284,6 +297,10 @@ async function handleDeleteConfirmCallback(ctx: Context, chatId: number, minutes
     const userId = await getUserIdByChatId(chatId);
     if (!userId) {
         await ctx.answerCallbackQuery({ text: NOT_LINKED_MESSAGE, show_alert: true });
+        return;
+    }
+    if (await isBlockedByUnverifiedEmail(userId)) {
+        await ctx.answerCallbackQuery({ text: EMAIL_NOT_VERIFIED_MESSAGE, show_alert: true });
         return;
     }
 
@@ -381,6 +398,10 @@ export function registerHandlers(bot: Bot): void {
             await ctx.reply(NOT_LINKED_MESSAGE);
             return;
         }
+        if (await isBlockedByUnverifiedEmail(userId)) {
+            await ctx.reply(EMAIL_NOT_VERIFIED_MESSAGE);
+            return;
+        }
 
         await sendHistoryPage(ctx, userId, 0);
     });
@@ -398,6 +419,10 @@ export function registerHandlers(bot: Bot): void {
         const userId = await getUserIdByChatId(chatId);
         if (!userId) {
             await ctx.reply(NOT_LINKED_MESSAGE);
+            return;
+        }
+        if (await isBlockedByUnverifiedEmail(userId)) {
+            await ctx.reply(EMAIL_NOT_VERIFIED_MESSAGE);
             return;
         }
 
@@ -433,6 +458,10 @@ export function registerHandlers(bot: Bot): void {
         const userId = await getUserIdByChatId(chatId);
         if (!userId) {
             await ctx.reply(NOT_LINKED_MESSAGE);
+            return;
+        }
+        if (await isBlockedByUnverifiedEmail(userId)) {
+            await ctx.reply(EMAIL_NOT_VERIFIED_MESSAGE);
             return;
         }
 
