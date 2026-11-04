@@ -9,6 +9,7 @@ process.env.DATABASE_URL = "postgres://test:test@localhost:5432/medibot_test";
 const { getDatabasePool } = await import("../src/database/database.ts");
 const {
     AccountAlreadyExistsError,
+    CURRENT_TERMS_VERSION,
     getAuthenticatedUser,
     isTokenRevokedByPasswordChange,
     loginUser,
@@ -45,7 +46,49 @@ test("isTokenRevokedByPasswordChange: token emitido no MESMO segundo (arredondad
 
 test("registerUser rejeita cadastro sem e-mail", async () => {
     await assert.rejects(
-        () => registerUser({ name: "Teste", password: "senha1234", phone: "+5561999999999" }),
+        () => registerUser({ name: "Teste", password: "senha1234", termsAccepted: true, phone: "+5561999999999" }),
+        ValidationError
+    );
+});
+
+test("registerUser grava a versão atual dos termos e a data de aceite no cadastro", async () => {
+    const insertCalls: unknown[][] = [];
+    async function handle(sql: string, params: unknown[] = []) {
+        if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") return { rows: [], rowCount: 0 };
+        if (sql.includes("SELECT 1 FROM users")) return { rows: [], rowCount: 0 };
+        if (sql.includes("SELECT id, email_verified_at FROM users")) return { rows: [], rowCount: 0 };
+        if (sql.includes("INSERT INTO users")) {
+            insertCalls.push(params);
+            return {
+                rows: [{
+                    id: "1", name: "Teste", email: "teste@exemplo.com", phone: null,
+                    timezone: "America/Sao_Paulo", password_hash: "hash", telegram_chat_id: null, email_verified_at: null
+                }],
+                rowCount: 1
+            };
+        }
+        return { rows: [], rowCount: 0 };
+    }
+    mock.method(pool, "query", async (sql: string, params?: unknown[]) => handle(sql, params));
+    mock.method(pool, "connect", async () => ({
+        query: async (sql: string, params?: unknown[]) => handle(sql, params),
+        release: () => {}
+    }));
+
+    await registerUser({ name: "Teste", password: "senha1234", email: "teste@exemplo.com", termsAccepted: true });
+
+    assert.equal(insertCalls.length, 1);
+    assert.ok(String(insertCalls[0][0 /* name */]).length > 0);
+    assert.equal(insertCalls[0][5], CURRENT_TERMS_VERSION);
+});
+
+test("registerUser rejeita cadastro sem aceitar os termos", async () => {
+    await assert.rejects(
+        () => registerUser({ name: "Teste", password: "senha1234", email: "teste@exemplo.com" }),
+        ValidationError
+    );
+    await assert.rejects(
+        () => registerUser({ name: "Teste", password: "senha1234", email: "teste@exemplo.com", termsAccepted: false }),
         ValidationError
     );
 });
@@ -80,7 +123,7 @@ test("registerUser aceita e-mail sem telefone", async () => {
         release: () => {}
     }));
 
-    const result = await registerUser({ name: "Teste", password: "senha1234", email: "teste@exemplo.com" });
+    const result = await registerUser({ name: "Teste", password: "senha1234", termsAccepted: true, email: "teste@exemplo.com" });
     assert.equal(result.user.email, "teste@exemplo.com");
     assert.equal(result.user.phone, null);
 });
@@ -219,7 +262,7 @@ test("registerUser: e-mail de conta verificada nunca é substituído", async () 
     setupRegisterDb([{ id: 1, email: "dono@exemplo.com", phone: null, emailVerifiedAt: new Date(), hasData: false }]);
 
     await assert.rejects(
-        () => registerUser({ name: "Impostor", password: "senha1234", email: "dono@exemplo.com" }),
+        () => registerUser({ name: "Impostor", password: "senha1234", termsAccepted: true, email: "dono@exemplo.com" }),
         AccountAlreadyExistsError
     );
 });
@@ -228,7 +271,7 @@ test("registerUser: e-mail de conta não verificada COM dados não é substituí
     setupRegisterDb([{ id: 1, email: "dono@exemplo.com", phone: null, emailVerifiedAt: null, hasData: true }]);
 
     await assert.rejects(
-        () => registerUser({ name: "Impostor", password: "senha1234", email: "dono@exemplo.com" }),
+        () => registerUser({ name: "Impostor", password: "senha1234", termsAccepted: true, email: "dono@exemplo.com" }),
         AccountAlreadyExistsError
     );
 });
@@ -238,7 +281,7 @@ test("registerUser: e-mail de conta não verificada SEM dados é substituído pe
         { id: 1, email: "dono@exemplo.com", phone: null, emailVerifiedAt: null, hasData: false }
     ]);
 
-    const result = await registerUser({ name: "Novo dono", password: "senha1234", email: "dono@exemplo.com" });
+    const result = await registerUser({ name: "Novo dono", password: "senha1234", termsAccepted: true, email: "dono@exemplo.com" });
 
     assert.deepEqual(deletedIds, [1]);
     assert.equal(insertedRows.length, 1);
@@ -250,7 +293,7 @@ test("registerUser: telefone já em uso por outra conta nunca é substituído, m
     setupRegisterDb([{ id: 1, email: "outro@exemplo.com", phone: "+5561999999999", emailVerifiedAt: null, hasData: false }]);
 
     await assert.rejects(
-        () => registerUser({ name: "Impostor", password: "senha1234", email: "novo@exemplo.com", phone: "+5561999999999" }),
+        () => registerUser({ name: "Impostor", password: "senha1234", termsAccepted: true, email: "novo@exemplo.com", phone: "+5561999999999" }),
         AccountAlreadyExistsError
     );
 });
@@ -262,14 +305,14 @@ test("registerUser: limite de 3 tentativas por hora por e-mail-alvo bloqueia a 4
 
     for (let i = 0; i < 3; i += 1) {
         await assert.rejects(
-            () => registerUser({ name: "Impostor", password: "senha1234", email: "dono@exemplo.com" }),
+            () => registerUser({ name: "Impostor", password: "senha1234", termsAccepted: true, email: "dono@exemplo.com" }),
             AccountAlreadyExistsError
         );
     }
     assert.equal(registrationAttempts.length, 3);
 
     await assert.rejects(
-        () => registerUser({ name: "Impostor", password: "senha1234", email: "dono@exemplo.com" }),
+        () => registerUser({ name: "Impostor", password: "senha1234", termsAccepted: true, email: "dono@exemplo.com" }),
         TooManyRegistrationAttemptsError
     );
     // A 4ª tentativa (bloqueada) não é registrada: evita que o limite "resete" mais devagar.
@@ -287,7 +330,7 @@ test("registerUser: limite diário (10) bloqueia mesmo com tentativas espalhadas
     }
 
     await assert.rejects(
-        () => registerUser({ name: "Impostor", password: "senha1234", email: "dono@exemplo.com" }),
+        () => registerUser({ name: "Impostor", password: "senha1234", termsAccepted: true, email: "dono@exemplo.com" }),
         TooManyRegistrationAttemptsError
     );
 });
@@ -300,7 +343,7 @@ test("registerUser: tentativas contra e-mails diferentes não compartilham o lim
 
     for (let i = 0; i < 3; i += 1) {
         await assert.rejects(
-            () => registerUser({ name: "Impostor", password: "senha1234", email: "dono-a@exemplo.com" }),
+            () => registerUser({ name: "Impostor", password: "senha1234", termsAccepted: true, email: "dono-a@exemplo.com" }),
             AccountAlreadyExistsError
         );
     }
@@ -308,7 +351,7 @@ test("registerUser: tentativas contra e-mails diferentes não compartilham o lim
     // Esgotou o limite só para dono-a; dono-b ainda não foi tentado, então segue com a
     // decisão normal (conta com dados -> 409, não 429).
     await assert.rejects(
-        () => registerUser({ name: "Impostor", password: "senha1234", email: "dono-b@exemplo.com" }),
+        () => registerUser({ name: "Impostor", password: "senha1234", termsAccepted: true, email: "dono-b@exemplo.com" }),
         AccountAlreadyExistsError
     );
 });

@@ -89,12 +89,15 @@ interface ApiCall {
     payload: Record<string, unknown>;
 }
 
-function setup(options: { emailVerifiedAt?: Date | null } = {}) {
+function setup(options: { emailVerifiedAt?: Date | null; accountDeleted?: boolean } = {}) {
     const apiCalls: ApiCall[] = [];
     const insertCalls: Array<{ params: unknown[] }> = [];
     const deleteCalls: Array<{ params: unknown[] }> = [];
     let queryRows = seedRows();
     const emailVerifiedAt = options.emailVerifiedAt === undefined ? new Date() : options.emailVerifiedAt;
+    // Simula a exclusão da própria conta: o chat continua existindo no Telegram, mas
+    // não há mais nenhuma linha em users com esse telegram_chat_id (ver accountService.ts).
+    const accountDeleted = options.accountDeleted ?? false;
 
     async function fakeFetch(url: string, init?: { body?: unknown }) {
         const method = new URL(String(url)).pathname.split("/").pop() ?? "";
@@ -112,7 +115,7 @@ function setup(options: { emailVerifiedAt?: Date | null } = {}) {
 
         if (sql.includes("FROM users WHERE telegram_chat_id")) {
             const chatId = params[0];
-            return chatId === TEST_CHAT_ID
+            return chatId === TEST_CHAT_ID && !accountDeleted
                 ? { rows: [{ id: String(TEST_USER_ID) }], rowCount: 1 }
                 : { rows: [], rowCount: 0 };
         }
@@ -471,6 +474,31 @@ test("flag ligada: callback de confirmação de apagar (a:y:) de conta não veri
     assert.match(String(callbackAnswers[0].payload.text), /Confirme seu e-mail/);
     assert.equal(deleteCalls.length, 0);
     assert.ok(getQueryRows().some((row) => row.channel === "telegram"));
+});
+
+// ===== Conta excluída pelo próprio usuário (DELETE /api/account) =====
+
+test("depois de excluir a própria conta, o bot trata o chat como não vinculado (não quebra nem responde com dados antigos)", async () => {
+    const { bot, apiCalls, insertCalls } = setup({ accountDeleted: true });
+    const createMock = mockOpenAiOnce({ output_text: "não deveria ser chamado", output: [] });
+
+    await bot.handleUpdate(textUpdate("Quais os efeitos da dipirona?") as never);
+
+    const replies = sendMessageCalls(apiCalls);
+    assert.equal(replies.length, 1);
+    assert.match(String(replies[0].payload.text), /ainda não está vinculado/);
+    assert.equal(createMock.mock.callCount(), 0);
+    assert.equal(insertCalls.length, 0);
+});
+
+test("depois de excluir a própria conta, /historico também trata o chat como não vinculado", async () => {
+    const { bot, apiCalls } = setup({ accountDeleted: true });
+
+    await bot.handleUpdate(textUpdate("/historico") as never);
+
+    const replies = sendMessageCalls(apiCalls);
+    assert.equal(replies.length, 1);
+    assert.match(String(replies[0].payload.text), /ainda não está vinculado/);
 });
 
 test("flag ligada: conta JÁ verificada continua usando o bot normalmente", async () => {

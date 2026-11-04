@@ -49,6 +49,10 @@
                     <label>Telefone <span>(opcional)</span><input id="register-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(61) 99999-9999" /></label>
                     <p class="auth-hint">O e-mail é obrigatório. O telefone é opcional.</p>
                     <label>Senha<input id="register-password" type="password" autocomplete="new-password" minlength="8" required /></label>
+                    <label class="auth-checkbox" id="register-terms-label">
+                        <input type="checkbox" id="register-terms" required />
+                        <span>Li e aceito os <a href="/termos" target="_blank" rel="noopener">Termos de Uso</a> e a <a href="/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</span>
+                    </label>
                     <button class="primary-button" type="submit">Criar conta</button>
                 </form>
                 <p class="auth-feedback" id="register-feedback" role="alert"></p>
@@ -144,7 +148,12 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
                 </button>
             </div>
-            <button type="button" class="sidebar-privacy-link" id="privacy-cookies-link">Privacidade e cookies</button>
+            <button type="button" class="sidebar-privacy-link sidebar-danger-link" id="delete-account-button">Excluir minha conta</button>
+            <div class="sidebar-legal-links">
+                <a class="sidebar-privacy-link" href="/privacidade">Política de Privacidade</a>
+                <a class="sidebar-privacy-link" href="/termos">Termos de Uso</a>
+                <button type="button" class="sidebar-privacy-link" id="cookie-preferences-link">Preferências de cookies</button>
+            </div>
         </aside>
         <div class="app-main">
         <header class="app-header">
@@ -471,6 +480,24 @@
                 <button type="button" class="secondary-button" id="confirm-dialog-cancel">Cancelar</button>
                 <button type="button" class="danger-button" id="confirm-dialog-confirm">Excluir</button>
             </div>
+        </div>
+    </div>
+
+    <div class="confirm-dialog-backdrop" id="delete-account-dialog-backdrop" hidden>
+        <div class="confirm-dialog" id="delete-account-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-account-dialog-title" aria-describedby="delete-account-dialog-message">
+            <h3 id="delete-account-dialog-title">Excluir minha conta</h3>
+            <p id="delete-account-dialog-message">
+                Isso é irreversível. Serão apagados sua conta, suas conversas, seus medicamentos e lembretes, o vínculo com o Telegram e o feedback que você enviou. Não há como desfazer depois de confirmar.
+            </p>
+            <form id="delete-account-form" class="auth-form" novalidate>
+                <label>Senha<input id="delete-account-password" type="password" autocomplete="current-password" required /></label>
+                <label>Para confirmar, digite <strong>EXCLUIR</strong><input id="delete-account-confirm-text" type="text" autocomplete="off" required /></label>
+                <p class="auth-feedback" id="delete-account-feedback" role="alert"></p>
+                <div class="confirm-dialog-actions">
+                    <button type="button" class="secondary-button" id="delete-account-cancel">Cancelar</button>
+                    <button type="submit" class="danger-button" id="delete-account-submit" disabled>Excluir minha conta</button>
+                </div>
+            </form>
         </div>
     </div>
 

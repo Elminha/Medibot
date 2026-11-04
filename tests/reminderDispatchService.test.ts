@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mock } from "node:test";
 
 const {
     DEFAULT_MAX_ATTEMPTS,
@@ -61,11 +62,18 @@ interface FakeDeliveryRow {
  * como `now` nas deps do despachante, para CURRENT_TIMESTAMP (aqui) e "agora" (lá)
  * nunca divergirem nos testes.
  */
-function createFakePool(clock: { now: () => Date }) {
+function createFakePool(clock: { now: () => Date }, options: { failInsertsForReminderId?: number } = {}) {
     let candidates: CandidateRow[] = [];
     const deliveries = new Map<string, FakeDeliveryRow>();
     let nextId = 1;
     const insertCalls: unknown[][] = [];
+
+    /** Simula a FK violation que a conta/lembrete apagado em paralelo provocaria (ver accountService.ts). */
+    function throwIfReminderWasDeleted(reminderId: number): void {
+        if (reminderId === options.failInsertsForReminderId) {
+            throw Object.assign(new Error("insert or update on table \"reminder_deliveries\" violates foreign key constraint"), { code: "23503" });
+        }
+    }
 
     function keyFor(reminderId: number, occurrenceAt: Date): string {
         return `${reminderId}:telegram:${occurrenceAt.getTime()}`;
@@ -81,6 +89,7 @@ function createFakePool(clock: { now: () => Date }) {
         if (sql.startsWith("INSERT INTO reminder_deliveries") && sql.includes("'skipped'")) {
             insertCalls.push(params);
             const [reminderId, occurrenceAt] = params as [number, Date];
+            throwIfReminderWasDeleted(reminderId);
             const key = keyFor(reminderId, occurrenceAt);
             if (deliveries.has(key)) {
                 return { rows: [], rowCount: 0 };
@@ -93,6 +102,7 @@ function createFakePool(clock: { now: () => Date }) {
         if (sql.startsWith("INSERT INTO reminder_deliveries") && sql.includes("'sending'")) {
             insertCalls.push(params);
             const [reminderId, occurrenceAt, stuckAfterMs] = params as [number, Date, number];
+            throwIfReminderWasDeleted(reminderId);
             const key = keyFor(reminderId, occurrenceAt);
             const nowMs = clock.now().getTime();
             const existing = deliveries.get(key);
@@ -288,6 +298,45 @@ test("vigência: fora de startsOn/endsOn não dispara", async () => {
     const summary = await runReminderDispatch({ pool, sender, now: clock.now }, { dryRun: false });
     assert.equal(summary.sent, 0);
     assert.equal(summary.occurrencesInWindow, 0);
+});
+
+test("lembrete apagado entre a busca de candidatos e a reivindicação do envio (ex.: exclusão da própria conta em paralelo) não derruba o resto do lote", async () => {
+    const clock = { now: () => new Date(OCCURRENCE_LOCAL_0800.getTime()) };
+    const { pool, setCandidates } = createFakePool(clock, { failInsertsForReminderId: 1 });
+    setCandidates([
+        candidateRow({ id: 1, times: ["08:00"], chatId: 555 }), // conta apagada em paralelo
+        candidateRow({ id: 2, times: ["08:00"], chatId: 556 }) // outro usuário, deve continuar normal
+    ]);
+    const errorMock = mock.method(console, "error", () => {});
+    const sender = createFakeSender(() => {});
+
+    const summary = await runReminderDispatch({ pool, sender, now: clock.now }, { dryRun: false });
+
+    assert.equal(summary.sent, 1);
+    assert.equal(sender.calls.length, 1);
+    assert.equal(sender.calls[0].chatId, 556);
+    assert.ok(errorMock.mock.callCount() >= 1);
+    mock.restoreAll();
+});
+
+test("lembrete apagado entre a busca de candidatos e o registro de 'skipped' (sem vínculo) não derruba o resto do lote", async () => {
+    const clock = { now: () => new Date(OCCURRENCE_LOCAL_0800.getTime()) };
+    const { pool, setCandidates } = createFakePool(clock, { failInsertsForReminderId: 1 });
+    setCandidates([
+        candidateRow({ id: 1, times: ["08:00"], chatId: null }), // conta apagada em paralelo, sem vínculo
+        candidateRow({ id: 2, times: ["08:00"], chatId: null }) // outro usuário sem vínculo, deve seguir marcado skipped
+    ]);
+    const errorMock = mock.method(console, "error", () => {});
+    const sender = createFakeSender(() => {
+        throw new Error("não deveria chamar o Telegram");
+    });
+
+    const summary = await runReminderDispatch({ pool, sender, now: clock.now }, { dryRun: false });
+
+    assert.equal(summary.skipped, 1);
+    assert.equal(sender.calls.length, 0);
+    assert.ok(errorMock.mock.callCount() >= 1);
+    mock.restoreAll();
 });
 
 test("usuário sem vínculo do Telegram: registrado como skipped, sem chamar o Telegram", async () => {

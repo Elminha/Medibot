@@ -288,8 +288,16 @@ export async function runReminderDispatch(deps: DispatchDeps, options: DispatchO
 
     const skippedItems = dueItems.filter(isUnsendable);
     for (const item of skippedItems) {
-        await insertSkippedDelivery(deps.pool, item.candidate.id, item.occurrenceAt);
-        summary.skipped += 1;
+        try {
+            await insertSkippedDelivery(deps.pool, item.candidate.id, item.occurrenceAt);
+            summary.skipped += 1;
+        } catch (error) {
+            // O lembrete (ou a conta) pode ter sido apagado entre a busca de candidatos e
+            // aqui (ex.: exclusão da própria conta em paralelo, ver accountService.ts): a
+            // FK para reminders passa a falhar, mas isso nunca pode derrubar o restante do
+            // lote, que é de outros usuários.
+            console.error(`Despachante de lembretes: não foi possível registrar 'skipped' para o lembrete ${item.candidate.id}.`, error);
+        }
     }
 
     const sendableItems = dueItems
@@ -297,7 +305,13 @@ export async function runReminderDispatch(deps: DispatchDeps, options: DispatchO
         .slice(0, maxSendsPerRun);
 
     await processBatches(sendableItems, concurrency, async (item) => {
-        const claimed = await claimDelivery(deps.pool, item.candidate.id, item.occurrenceAt, stuckAfterMs);
+        let claimed: ClaimResult | null;
+        try {
+            claimed = await claimDelivery(deps.pool, item.candidate.id, item.occurrenceAt, stuckAfterMs);
+        } catch (error) {
+            console.error(`Despachante de lembretes: não foi possível reivindicar o envio do lembrete ${item.candidate.id}.`, error);
+            return;
+        }
         if (!claimed) {
             return;
         }

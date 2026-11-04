@@ -3,6 +3,7 @@ import express from "express";
 import path from "node:path";
 import bulaRoutes from "./routes/bulaRoutes.js";
 import bulaListRoutes from "./routes/bulaListRoutes.js";
+import accountRoutes from "./routes/accountRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import feedbackRoutes from "./routes/feedbackRoutes.js";
 import medicationRoutes from "./routes/medicationRoutes.js";
@@ -25,7 +26,10 @@ app.disable("etag");
 app.set("trust proxy", 1);
 
 app.use(express.json());
-app.use(express.static(path.join(process.cwd(), "public")));
+// extensions: ["html"] permite /privacidade e /termos resolverem para os arquivos
+// .html correspondentes também no servidor local (na Vercel isso é feito pelas rotas
+// explícitas em vercel.json, que não passam por aqui).
+app.use(express.static(path.join(process.cwd(), "public"), { extensions: ["html"] }));
 
 app.get("/health", (_request, response) => {
     response.json({ status: "ok" });
@@ -34,6 +38,7 @@ app.get("/health", (_request, response) => {
 app.use("/api/bula", bulaRoutes);
 app.use("/api/bulas", bulaListRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/account", accountRoutes);
 app.use("/api/medications", medicationRoutes);
 app.use("/api/reminders", reminderRoutes);
 app.use("/api/queries", queryHistoryRoutes);

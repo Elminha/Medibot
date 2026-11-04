@@ -52,7 +52,7 @@ function parseRegisterInput(body: unknown): RegisterInput | undefined {
         return undefined;
     }
 
-    const { name, email, password, phone, timezone } = body as Record<string, unknown>;
+    const { name, email, password, phone, timezone, termsAccepted } = body as Record<string, unknown>;
     if (typeof name !== "string" || typeof password !== "string") {
         return undefined;
     }
@@ -65,8 +65,11 @@ function parseRegisterInput(body: unknown): RegisterInput | undefined {
     if (timezone !== undefined && typeof timezone !== "string") {
         return undefined;
     }
+    if (termsAccepted !== undefined && typeof termsAccepted !== "boolean") {
+        return undefined;
+    }
 
-    return { name, email, password, phone, timezone };
+    return { name, email, password, phone, timezone, termsAccepted };
 }
 
 function parseLoginInput(body: unknown): LoginInput | undefined {

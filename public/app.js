@@ -150,7 +150,7 @@ const cookieBanner = document.querySelector("#cookie-banner");
 const cookieBannerHint = document.querySelector("#cookie-banner-hint");
 const cookieAcceptButton = document.querySelector("#cookie-accept");
 const cookieRejectButton = document.querySelector("#cookie-reject");
-const privacyCookiesLink = document.querySelector("#privacy-cookies-link");
+const privacyCookiesLink = document.querySelector("#cookie-preferences-link");
 const viewPageMeta = {
     chat: { title: "Conversar", path: "/conversar" },
     history: { title: "Histórico", path: "/historico" },
@@ -332,6 +332,78 @@ function confirmDialog(message, { title = "Confirmar", confirmLabel = "Excluir" 
         confirmDialogBackdrop.addEventListener("click", onBackdropClick);
     });
 }
+
+// ===== Excluir a própria conta =====
+
+const deleteAccountButton = document.querySelector("#delete-account-button");
+const deleteAccountDialogBackdrop = document.querySelector("#delete-account-dialog-backdrop");
+const deleteAccountForm = document.querySelector("#delete-account-form");
+const deleteAccountPasswordInput = document.querySelector("#delete-account-password");
+const deleteAccountConfirmTextInput = document.querySelector("#delete-account-confirm-text");
+const deleteAccountFeedback = document.querySelector("#delete-account-feedback");
+const deleteAccountCancelButton = document.querySelector("#delete-account-cancel");
+const deleteAccountSubmitButton = document.querySelector("#delete-account-submit");
+const DELETE_ACCOUNT_CONFIRM_WORD = "EXCLUIR";
+
+function updateDeleteAccountSubmitState() {
+    deleteAccountSubmitButton.disabled = !(
+        deleteAccountPasswordInput.value.length > 0
+        && deleteAccountConfirmTextInput.value === DELETE_ACCOUNT_CONFIRM_WORD
+    );
+}
+
+function closeDeleteAccountDialog() {
+    deleteAccountDialogBackdrop.hidden = true;
+    deleteAccountForm.reset();
+    deleteAccountFeedback.textContent = "";
+    updateDeleteAccountSubmitState();
+}
+
+function openDeleteAccountDialog() {
+    deleteAccountDialogBackdrop.hidden = false;
+    deleteAccountPasswordInput.focus();
+}
+
+deleteAccountButton?.addEventListener("click", openDeleteAccountDialog);
+deleteAccountCancelButton.addEventListener("click", closeDeleteAccountDialog);
+deleteAccountDialogBackdrop.addEventListener("click", (event) => {
+    if (event.target === deleteAccountDialogBackdrop) closeDeleteAccountDialog();
+});
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !deleteAccountDialogBackdrop.hidden) closeDeleteAccountDialog();
+});
+deleteAccountPasswordInput.addEventListener("input", updateDeleteAccountSubmitState);
+deleteAccountConfirmTextInput.addEventListener("input", updateDeleteAccountSubmitState);
+
+deleteAccountForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    deleteAccountFeedback.textContent = "";
+    deleteAccountSubmitButton.disabled = true;
+
+    try {
+        const response = await authenticatedFetch("/api/account", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: deleteAccountPasswordInput.value })
+        });
+
+        if (!response.ok) {
+            deleteAccountFeedback.textContent = await readError(response, "Não foi possível excluir a conta.");
+            updateDeleteAccountSubmitState();
+            return;
+        }
+
+        track("account_deleted");
+        deleteAccountDialogBackdrop.hidden = true;
+        deleteAccountForm.reset();
+        showAuthentication("Sua conta foi excluída com sucesso.");
+        loginFeedback.classList.add("success");
+    } catch (error) {
+        if (error?.message === "authentication-required" || error?.message === "email-not-verified") return;
+        deleteAccountFeedback.textContent = "Não foi possível excluir a conta. Verifique sua conexão e tente novamente.";
+        updateDeleteAccountSubmitState();
+    }
+});
 
 let isWaiting = false;
 let notificationScheduler = null;
@@ -2875,7 +2947,10 @@ registerForm.addEventListener("submit", async (event) => {
     const emailConfirm = document.querySelector("#register-email-confirm").value.trim();
     const phone = document.querySelector("#register-phone").value.trim();
     const password = document.querySelector("#register-password").value;
+    const termsCheckbox = document.querySelector("#register-terms");
+    const termsLabel = document.querySelector("#register-terms-label");
     registerFeedback.textContent = "";
+    termsLabel.classList.remove("input-error");
 
     if (!email) {
         registerFeedback.textContent = "Informe um e-mail.";
@@ -2885,12 +2960,18 @@ registerForm.addEventListener("submit", async (event) => {
         registerFeedback.textContent = "Os e-mails informados não coincidem.";
         return;
     }
+    if (!termsCheckbox.checked) {
+        registerFeedback.textContent = "Você precisa aceitar os Termos de Uso e a Política de Privacidade.";
+        termsLabel.classList.add("input-error");
+        termsCheckbox.focus();
+        return;
+    }
 
     try {
         const response = await fetch("/api/auth/register", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, email, phone, password })
+            body: JSON.stringify({ name, email, phone, password, termsAccepted: termsCheckbox.checked })
         });
         if (!response.ok) throw new Error(await readError(response, "Não foi possível criar a conta."));
         registerForm.reset();

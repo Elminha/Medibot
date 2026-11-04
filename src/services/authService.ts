@@ -24,6 +24,10 @@ const ONE_DAY_MS = 24 * ONE_HOUR_MS;
 // pessoa só para invalidar o token de verificação dela.
 const TAKEOVER_LIMIT_PER_EMAIL_PER_HOUR = 3;
 const TAKEOVER_LIMIT_PER_EMAIL_PER_DAY = 10;
+// Identifica qual versão dos Termos de Uso/Política de Privacidade foi aceita no
+// cadastro (users.terms_version); atualizar junto com a data no topo das páginas
+// /termos e /privacidade quando o texto mudar.
+export const CURRENT_TERMS_VERSION = "2026-11";
 
 export interface AuthUser {
     id: number;
@@ -43,6 +47,7 @@ export interface RegisterInput {
     email?: string;
     phone?: string;
     timezone?: string;
+    termsAccepted?: boolean;
 }
 
 export interface LoginInput {
@@ -267,6 +272,10 @@ export async function registerUser(input: RegisterInput): Promise<AuthResult> {
     }
     validatePassword(input.password);
 
+    if (input.termsAccepted !== true) {
+        throw new ValidationError("Você precisa aceitar os Termos de Uso e a Política de Privacidade.");
+    }
+
     const rawEmail = input.email?.trim();
     if (!rawEmail) {
         throw new ValidationError("O e-mail é obrigatório.");
@@ -342,10 +351,10 @@ export async function registerUser(input: RegisterInput): Promise<AuthResult> {
         }
 
         const result = await client.query<AuthUserRow>(
-            `INSERT INTO users (name, email, password_hash, phone, timezone)
-             VALUES ($1, $2, $3, $4, $5)
+            `INSERT INTO users (name, email, password_hash, phone, timezone, terms_accepted_at, terms_version)
+             VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, $6)
              RETURNING id, name, email, phone, timezone, password_hash, telegram_chat_id, email_verified_at;`,
-            [name, email, passwordHash, phone ?? null, timezone]
+            [name, email, passwordHash, phone ?? null, timezone, CURRENT_TERMS_VERSION]
         );
 
         await client.query("COMMIT");

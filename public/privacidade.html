@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <script>
+        (function () {
+            try {
+                var stored = window.localStorage.getItem("medibot_theme");
+                var theme = stored === "light" || stored === "dark"
+                    ? stored
+                    : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+                document.documentElement.setAttribute("data-theme", theme);
+            } catch (error) {
+                document.documentElement.setAttribute("data-theme", "light");
+            }
+        })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Política de Privacidade do MediBot." />
+    <title>MediBot | Política de Privacidade</title>
+    <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+    <div class="legal-shell">
+        <header class="legal-header">
+            <a class="brand-lockup" href="/">
+                <img class="brand-mark" src="/img/medibot-logo-128.png" alt="" width="34" height="34" />
+                <span>MediBot</span>
+            </a>
+            <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="false">
+                <span class="theme-toggle-icon icon-sun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></span>
+                <span class="theme-toggle-icon icon-moon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span>
+                <span class="theme-toggle-label label-dark">Tema escuro</span>
+                <span class="theme-toggle-label label-light">Tema claro</span>
+            </button>
+        </header>
+
+        <main class="legal-card">
+            <h1>Política de Privacidade</h1>
+            <p class="legal-updated">Última atualização: novembro de 2026.</p>
+
+            <h2>1. Quem somos</h2>
+            <p>O MediBot é um projeto acadêmico (Trabalho de Conclusão de Curso, UNIEURO) desenvolvido por estudantes. Responsável pelo tratamento dos dados: equipe do projeto MediBot. Contato: <a href="mailto:medibot.oficial@gmail.com">medibot.oficial@gmail.com</a>.</p>
+
+            <h2>2. O que o MediBot faz</h2>
+            <p>O MediBot oferece informação educativa baseada nas bulas de medicamentos disponíveis no sistema e lembretes de horário. Ele não é um serviço médico, não faz diagnóstico, não prescreve e não substitui a orientação de um profissional de saúde.</p>
+
+            <h2>3. Dados que tratamos</h2>
+            <ul>
+                <li><strong>Conta:</strong> e-mail, telefone (opcional), senha (guardada apenas de forma criptografada, nunca em texto), data de cadastro, data de aceite dos termos e data de confirmação do e-mail.</li>
+                <li><strong>Conversas:</strong> as perguntas que você faz e as respostas.</li>
+                <li><strong>Medicamentos e lembretes:</strong> nome do medicamento, dosagem e instruções (quando você preenche), horários, dias da semana e período dos lembretes.</li>
+                <li><strong>Telegram:</strong> se você vincular sua conta, o identificador do seu chat.</li>
+                <li><strong>Feedback:</strong> o que você enviar pelo botão de feedback.</li>
+                <li><strong>Segurança e prevenção de abuso:</strong> registros técnicos (em forma anonimizada ou com hash, nunca o e-mail em texto puro) de tentativas de cadastro, de reenvio de confirmação de e-mail e de redefinição de senha, usados só para aplicar limites contra uso abusivo.</li>
+                <li><strong>Dados técnicos:</strong> registros de funcionamento do servidor e do provedor de hospedagem (podem incluir endereço IP), para operação e segurança.</li>
+                <li><strong>Analítica:</strong> estatísticas de uso do Google Analytics, somente se você aceitar os cookies.</li>
+            </ul>
+            <p><strong>Atenção:</strong> perguntas sobre medicamentos podem revelar informações de saúde. Evite escrever nome completo, CPF, endereço ou diagnósticos detalhados nas suas perguntas.</p>
+
+            <h2>4. Para que usamos</h2>
+            <p>Usamos seus dados para criar e manter sua conta, responder suas perguntas, enviar lembretes e e-mails relacionados à conta (confirmação de e-mail e redefinição de senha), proteger o sistema contra abuso e melhorar o serviço.</p>
+
+            <h2>5. Com quem compartilhamos</h2>
+            <p>Usamos prestadores para operar o serviço: OpenAI (o texto das suas perguntas é processado para gerar as respostas, sem enviar seu e-mail ou identificação da conta), Supabase (banco de dados, com servidores na região de São Paulo), Vercel (hospedagem), Telegram (se você usar o bot) e Google (envio de e-mails pelo Gmail e, com seu consentimento, Google Analytics). Alguns desses prestadores processam dados fora do Brasil. Não vendemos seus dados.</p>
+
+            <h2>6. Cookies e analítica</h2>
+            <p>Usamos armazenamento do navegador para manter você logado e lembrar preferências, e Google Analytics apenas com seu consentimento, que pode ser revisto a qualquer momento em "Preferências de cookies".</p>
+
+            <h2>7. Por quanto tempo guardamos</h2>
+            <p>Guardamos seus dados enquanto sua conta existir. Ao excluir a conta pelo site, seus dados são apagados; cópias de segurança do banco de dados podem manter registros por um curto período.</p>
+
+            <h2>8. Seus direitos (LGPD, art. 18)</h2>
+            <p>Você pode confirmar a existência do tratamento, acessar, corrigir, portar e eliminar seus dados, revogar consentimento e pedir informações sobre compartilhamento. A exclusão da conta pode ser feita por você mesmo no site, na seção "Conta". Os demais pedidos podem ser feitos por e-mail, com resposta em até 15 dias.</p>
+
+            <h2>9. Segurança</h2>
+            <p>Usamos senhas criptografadas, conexões HTTPS, acesso ao banco de dados restrito às credenciais do servidor e limites contra abuso. Nenhum sistema é 100% seguro; em caso de incidente relevante, avisaremos as pessoas afetadas.</p>
+
+            <h2>10. Menores de idade</h2>
+            <p>O MediBot é destinado a maiores de 18 anos.</p>
+
+            <h2>11. Mudanças nesta política</h2>
+            <p>Podemos atualizar esta política; a data no topo mostra a versão vigente.</p>
+
+            <p class="legal-back"><a href="/">&larr; Voltar para o MediBot</a></p>
+        </main>
+    </div>
+    <script src="/legalPage.js" type="module"></script>
+</body>
+</html>
