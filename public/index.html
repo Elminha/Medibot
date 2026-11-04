@@ -106,6 +106,10 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg>
                     <span>Medicamentos</span>
                 </button>
+                <button type="button" class="nav-button" data-view="bulas">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M9 7h7"/><path d="M9 11h7"/></svg>
+                    <span>Bulas disponíveis</span>
+                </button>
                 <button type="button" class="nav-button" data-view="reminders">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
                     <span>Lembretes</span>
@@ -208,6 +212,27 @@
             <div class="medication-list" id="medication-list" aria-live="polite" aria-busy="true">
                 <p class="medication-state">Carregando medicamentos...</p>
             </div>
+        </section>
+
+        <section class="bulas-panel" aria-labelledby="bulas-title">
+            <div class="section-heading">
+                <div>
+                    <h2 id="bulas-title">Bulas disponíveis</h2>
+                    <p>Medicamentos cujas bulas o MediBot já consegue consultar.</p>
+                </div>
+            </div>
+
+            <div class="bulas-search-row">
+                <label class="sr-only" for="bulas-search">Buscar bula pelo nome</label>
+                <input type="search" id="bulas-search" name="bulas-search" placeholder="Buscar bula pelo nome..." autocomplete="off" />
+                <span class="bulas-count" id="bulas-count" aria-live="polite"></span>
+            </div>
+
+            <p class="bulas-feedback" id="bulas-feedback" role="status" aria-live="polite"></p>
+
+            <ul class="bulas-list" id="bulas-list" aria-live="polite" aria-busy="true"></ul>
+
+            <p class="bulas-missing-notice">Se o seu medicamento não estiver na lista, o MediBot ainda não consegue responder sobre ele.</p>
         </section>
 
         <section class="reminders-panel" aria-labelledby="reminders-title">
