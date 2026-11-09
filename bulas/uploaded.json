@@ -7,6 +7,55 @@
     "origin": "upload"
   },
   {
+    "filename": "bula_aciclovir.pdf",
+    "sha256": "cbeb5b9b91c9d59fe53ec1b97d6761c469e9b974f130f2bc50632c35ddf3656b",
+    "openaiFileId": "file-R4NZke5GzWfjM7EMZS7KVe",
+    "uploadedAt": "2026-11-09T06:11:49.007Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_acido_acetilsalicilico.pdf",
+    "sha256": "eb133f3dad34eb0efe71fa9a686e4a974a9900fd9fa06c8dc68810b0f3752ced",
+    "openaiFileId": "file-5jCC9nBEJDMpKifZj5eTr2",
+    "uploadedAt": "2026-11-09T06:12:02.484Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_acido_mefenamico.pdf",
+    "sha256": "0d2ed5f438fc6bfbba545c5b67881fb97a9a5d213c082624e34c384250db8adc",
+    "openaiFileId": "file-KECb7DmKPCCoPYUjRkQUMo",
+    "uploadedAt": "2026-11-09T06:12:15.596Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_albendazol.pdf",
+    "sha256": "27c61653944a6691e34c6136054e6a15de1b184d92799ce39f3c957b124040b7",
+    "openaiFileId": "file-LVzC4guMUXrAzLrX2WVoPV",
+    "uploadedAt": "2026-11-09T06:12:28.811Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_alopurinol.pdf",
+    "sha256": "dd9c574c98c45319d07d6fc2e57ba27aad2ddde64d829cc0901676773d39f856",
+    "openaiFileId": "file-61wtB2jVMBbhDjyo17F29c",
+    "uploadedAt": "2026-11-09T06:12:41.944Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_alprazolam.pdf",
+    "sha256": "fccc30ac2fcf7ec845e122dd5b527379cb77eb0b6111bb338dfd604385d1b5b2",
+    "openaiFileId": "file-Ft8aa6jVWdaqxF3iXdvkuX",
+    "uploadedAt": "2026-11-09T06:12:55.554Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_amoxicilina_clavulanato.pdf",
+    "sha256": "04d1f524181e6755fdf0fa845b049111d147d78d250052ab28a87de0c503e9fc",
+    "openaiFileId": "file-R5pnUFNHDc5Yzcu7rvjX3C",
+    "uploadedAt": "2026-11-09T06:13:08.943Z",
+    "origin": "upload"
+  },
+  {
     "filename": "bula_amoxicilina.pdf",
     "sha256": "f004593633165f8a5ec5e3798e0ea8a62037d1b3eb3f95e9dd054f49b82d3a51",
     "uploadedAt": "2026-11-04T04:01:56.471Z",
@@ -20,6 +69,13 @@
     "origin": "upload"
   },
   {
+    "filename": "bula_atorvastatina.pdf",
+    "sha256": "4b44d366b854404e81d08840f19ccadc1d7d3985200072b7d0c7b9e068f495b3",
+    "openaiFileId": "file-SXvtaA5o2vJDit7Wx2hYG9",
+    "uploadedAt": "2026-11-09T06:13:38.219Z",
+    "origin": "upload"
+  },
+  {
     "filename": "bula_azitromicina.pdf",
     "sha256": "f3c20f848168bf505201d5aefe6258a23613524fb9b6361b4155473f23182a15",
     "uploadedAt": "2026-11-04T04:01:56.473Z",
@@ -30,6 +86,13 @@
     "sha256": "7a3b5dfdbede66be3826bd9fb9101e684abe2fc8c7d2cc29742dcf6daff88777",
     "openaiFileId": "file-TpADYC7t2P79WpYJk8U8p2",
     "uploadedAt": "2026-11-04T20:25:13.977Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_bromoprida.pdf",
+    "sha256": "c88c192c43c3efc696cb9e1046ac6dfb2d5090c4213f50e0763f793d302c4a4c",
+    "openaiFileId": "file-BiNjfNHQaTR5dNCRoZU9vw",
+    "uploadedAt": "2026-11-09T06:13:52.346Z",
     "origin": "upload"
   },
   {
@@ -58,6 +121,13 @@
     "sha256": "c713b186cecd3a9739d58efbed67eea7c17c1060fbf7f89959d4d1048bfec5dc",
     "openaiFileId": "file-77TmUwNqzDPquYHVALugZb",
     "uploadedAt": "2026-11-04T20:26:07.413Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_carbamazepina.pdf",
+    "sha256": "e737d689a8001fed86244bfa69a6e018281e1e05293ce17cd4382039ec52a23d",
+    "openaiFileId": "file-5FhDZ2NdjPAK83U7b7u1yM",
+    "uploadedAt": "2026-11-09T06:14:05.814Z",
     "origin": "upload"
   },
   {
@@ -113,6 +183,13 @@
     "origin": "legado"
   },
   {
+    "filename": "bula_clortalidona.pdf",
+    "sha256": "6345536e8044db434f77af8188a6a48814f1328104c271ec3cf4491f04075a95",
+    "openaiFileId": "file-GFe1VcM3eeFQ5qUdCo42fp",
+    "uploadedAt": "2026-11-09T06:14:19.290Z",
+    "origin": "upload"
+  },
+  {
     "filename": "bula_dapagliflozina.pdf",
     "sha256": "014817b113006ae2f2af2f22c36917fee530e47e4fc8101442860716fbfe476a",
     "openaiFileId": "file-1WpGntGpbBWADiVB3Y5Bus",
@@ -124,6 +201,27 @@
     "sha256": "69101a8f4b2ee2f70fd7014e47b0d071aea66eb658c01d4537284a106893a8d1",
     "openaiFileId": "file-8PdtdYsXksuEQ7FrBAPMqh",
     "uploadedAt": "2026-11-04T20:27:34.077Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_diclofenaco_sodico.pdf",
+    "sha256": "a8b39b7415c0d4df0c9ef41225ca4111aab73f769a8f02593f37bd51f007f42a",
+    "openaiFileId": "file-UfqdQJ8Ah5BcRBajjESfWe",
+    "uploadedAt": "2026-11-09T06:14:32.844Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_dimenidrinato_piridoxina.pdf",
+    "sha256": "2567c4401f989c3ca155dda61bf4ed553bb81ae73c8543d77965e662b87a801c",
+    "openaiFileId": "file-7V7Xiunyxs2bXAX4VDAtSP",
+    "uploadedAt": "2026-11-09T06:14:53.564Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_dimenidrinato.pdf",
+    "sha256": "94fa2565d6af3c877f853b362d41b86d03d0c30bbaba41171a74cba5c12213b1",
+    "openaiFileId": "file-KeaqLRcba9XK71jXHWTtwT",
+    "uploadedAt": "2026-11-09T06:14:45.902Z",
     "origin": "upload"
   },
   {
@@ -143,6 +241,13 @@
     "sha256": "438c20bd278a4a1cef9bc670afcf55a31b42ecd0dce95d313081ad235ad7eedf",
     "openaiFileId": "file-Fo6dMn4EDUCc3jzZY8JUgx",
     "uploadedAt": "2026-11-04T20:27:52.797Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_doxiciclina.pdf",
+    "sha256": "cfccf6ea73fdc11312b8e0dab264cc38bfb333d5abcb6dbc5de6f71ec6266633",
+    "openaiFileId": "file-73c8AWUbWSE9SjCuPQptjQ",
+    "uploadedAt": "2026-11-09T06:15:34.264Z",
     "origin": "upload"
   },
   {
@@ -181,6 +286,20 @@
     "origin": "upload"
   },
   {
+    "filename": "bula_gabapentina.pdf",
+    "sha256": "c400ea4990ba9aea4ed1cff1e70fcec15555a853b1bea41859d06df6c129348e",
+    "openaiFileId": "file-78fZjNnett9R8ULd87qiUR",
+    "uploadedAt": "2026-11-09T06:15:47.526Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_gliclazida.pdf",
+    "sha256": "84e196e8ea9cf9d9614e62b217732648bccae7b861d110022a27b5cd3c733998",
+    "openaiFileId": "file-1MxL1kKjA7ACNuJrmNoz7S",
+    "uploadedAt": "2026-11-09T06:16:00.792Z",
+    "origin": "upload"
+  },
+  {
     "filename": "bula_glimepirida.pdf",
     "sha256": "195802599841e49aa24d0925864bf3fe23e4b93b3cbf5f5f4e47582e215b8e1c",
     "openaiFileId": "file-5pQv5BtA5yXuNtNprdSQki",
@@ -207,10 +326,31 @@
     "origin": "legado"
   },
   {
+    "filename": "bula_indapamida.pdf",
+    "sha256": "b600241670b83c47b9a0e481c689ab4fb90e3e1a5adcc805c20aced051fc5445",
+    "openaiFileId": "file-QUUMCbTyG5x7MUWyydGkWK",
+    "uploadedAt": "2026-11-09T06:16:13.907Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_ivermectina.pdf",
+    "sha256": "2c99297e9ca1a899a6464e77f3cb6e58ae0ed75c9692cbb4c8c25d388f1c2443",
+    "openaiFileId": "file-MTiJdEPVyLs6KDnRRkNQqo",
+    "uploadedAt": "2026-11-09T06:16:27.104Z",
+    "origin": "upload"
+  },
+  {
     "filename": "bula_lansoprazol.pdf",
     "sha256": "2ed9d6efecd8631d1a19939a83aebac81ad9dee5b222b8885337c853aa50958d",
     "openaiFileId": "file-Dajo2pUya4C5YNeegVUQJ6",
     "uploadedAt": "2026-11-04T20:30:18.566Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_levofloxacino.pdf",
+    "sha256": "bc3782f7534511c736fa52b1b03fe6ebe3d4bba04f60df98555d807f0dd3aef5",
+    "openaiFileId": "file-Xe7y1JPrwPpciZ8aP2feDN",
+    "uploadedAt": "2026-11-09T06:16:40.642Z",
     "origin": "upload"
   },
   {
@@ -237,6 +377,13 @@
     "sha256": "53b9ba6459b1cf273dcd500476819229aaf80ae33c023d733f788423bbee6d31",
     "uploadedAt": "2026-11-04T04:01:56.498Z",
     "origin": "legado"
+  },
+  {
+    "filename": "bula_meloxicam.pdf",
+    "sha256": "bb93bea7362ec8eb415f386ea8a1a65f8f879a95ff31a077e9d3b2bd9690b5b8",
+    "openaiFileId": "file-5H322eCUJznXAjNiD71VN4",
+    "uploadedAt": "2026-11-09T06:16:54.029Z",
+    "origin": "upload"
   },
   {
     "filename": "bula_mesalazina.pdf",
@@ -280,6 +427,13 @@
     "origin": "legado"
   },
   {
+    "filename": "bula_nistatina.pdf",
+    "sha256": "f5ab2f8031cba6510bbd56d5d452bc9abd19321f4491a73ad017765ac7d56b31",
+    "openaiFileId": "file-HV944jFSusimqEbtpunvh2",
+    "uploadedAt": "2026-11-09T06:17:07.103Z",
+    "origin": "upload"
+  },
+  {
     "filename": "bula_olmesartana.pdf",
     "sha256": "a0d89871ef7427f356f72e36b82c24788f79316060cfaf20211a0bd2cc9679e2",
     "openaiFileId": "file-U2VzDrUGUTnfHRCFssREeS",
@@ -312,10 +466,24 @@
     "origin": "legado"
   },
   {
+    "filename": "bula_paracetamol_codeina.pdf",
+    "sha256": "d53cb30f5e2190d1e0133d2c3032f9db10a48a19bb06a23df989e2439966deff",
+    "openaiFileId": "file-5VKSowUXC86WR76QevkHwk",
+    "uploadedAt": "2026-11-09T06:17:20.655Z",
+    "origin": "upload"
+  },
+  {
     "filename": "bula_paracetamol.pdf",
     "sha256": "880a41737adf4074c1812fbf3d43fd5d2f15cbaf6f3e0b008a71e2b0fae5186b",
     "uploadedAt": "2026-11-04T04:01:56.506Z",
     "origin": "legado"
+  },
+  {
+    "filename": "bula_prednisolona.pdf",
+    "sha256": "fd7eb321c4034f6a7fc6620b53349553c14a26187bb65dac407be6c1419d8c0b",
+    "openaiFileId": "file-FrcV4u9Tp6CdFKfU1b1qzD",
+    "uploadedAt": "2026-11-09T06:17:34.004Z",
+    "origin": "upload"
   },
   {
     "filename": "bula_prednisona.pdf",
@@ -325,10 +493,24 @@
     "origin": "upload"
   },
   {
+    "filename": "bula_pregabalina.pdf",
+    "sha256": "4f8f4eee70689feea160555f619092515f6985cd1be99bfccea51adaa5d28f30",
+    "openaiFileId": "file-5xHmsYJbhnxuFoPh3VDJxX",
+    "uploadedAt": "2026-11-09T06:17:57.782Z",
+    "origin": "upload"
+  },
+  {
     "filename": "bula_propranolol.pdf",
     "sha256": "eac0590d79a1b45fc15aa880ec69b4b08f013d171789c354c2475f4146ff7174",
     "openaiFileId": "file-WutMWnKtvavUzXAkQideQd",
     "uploadedAt": "2026-11-04T20:32:54.812Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_rivaroxabana.pdf",
+    "sha256": "e21e78441d4a905ee04fa2f65c3915ad1cdefadca3baca50241333e2972b7421",
+    "openaiFileId": "file-Ju3sBzML3dJnNfkGQe6DkD",
+    "uploadedAt": "2026-11-09T06:18:10.796Z",
     "origin": "upload"
   },
   {
@@ -352,6 +534,13 @@
     "origin": "upload"
   },
   {
+    "filename": "bula_succinato_de_metoprolol.pdf",
+    "sha256": "e57339c302503c203eede1414cf5aa620202d0a951af7ae2974d880c9470b473",
+    "openaiFileId": "file-C4HpYiJErgVXXyzMWmdb2h",
+    "uploadedAt": "2026-11-09T06:18:24.499Z",
+    "origin": "upload"
+  },
+  {
     "filename": "bula_sulfametoxazol_trimetoprima.pdf",
     "sha256": "d8010b1afdecead9fdd8cabade95b72c88457191979b9a5939efc6ce1649c30e",
     "openaiFileId": "file-KzypZus8Z1VuQhCm9HCskS",
@@ -366,10 +555,31 @@
     "origin": "upload"
   },
   {
+    "filename": "bula_telmisartana.pdf",
+    "sha256": "4e6eca25585c683af5f3ab52ad48556cf04c63874d547c3654d8850a9280d281",
+    "openaiFileId": "file-7xZhtWiP2nvHqp6GA91i8V",
+    "uploadedAt": "2026-11-09T06:18:38.352Z",
+    "origin": "upload"
+  },
+  {
     "filename": "bula_torsilax.pdf",
     "sha256": "c7da4eefb04881136ee28b22f55de67d81e61fa04da51ae3e51c7f17853792bc",
     "openaiFileId": "file-HfiFbtM1paJ7aZJ8mhGNJB",
     "uploadedAt": "2026-11-04T20:34:17.485Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_valsartana.pdf",
+    "sha256": "0691da5cccdf598548a079ca50ac115fdab310d7df1b39549af5b8a610aad2a7",
+    "openaiFileId": "file-1s4NkAd7ScjAGtFvsFCFGq",
+    "uploadedAt": "2026-11-09T06:18:51.559Z",
+    "origin": "upload"
+  },
+  {
+    "filename": "bula_varfarina.pdf",
+    "sha256": "a2affd3fb08f9038f92854321d7f2095b9d54ca0555e52d4c82c0796e0ccf6a4",
+    "openaiFileId": "file-LuHEhzQhf78vaYwezKeMzC",
+    "uploadedAt": "2026-11-09T06:19:05.088Z",
     "origin": "upload"
   },
   {
