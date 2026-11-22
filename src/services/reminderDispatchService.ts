@@ -1,4 +1,5 @@
 import { getOccurrencesInWindow, type OccurrenceReminder } from "./reminderOccurrences.js";
+import { decryptField } from "./fieldEncryption.js";
 import { isEmailVerificationRequired } from "./emailVerificationService.js";
 
 export const DEFAULT_WINDOW_MS = 5 * 60_000;
@@ -118,7 +119,7 @@ export async function fetchTelegramDispatchCandidates(pool: DispatchPool): Promi
 
     return result.rows.map((row) => ({
         id: Number(row.reminder_id),
-        medicationName: row.medication_name,
+        medicationName: decryptField("medications.name", row.medication_name),
         active: row.active,
         times: row.times ?? [],
         weekdays: row.weekdays ?? [],

@@ -3,6 +3,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { getDatabasePool } from "../database/database.js";
 import { getTelegramBot } from "../services/telegramBot.js";
 import { runReminderDispatch, type TelegramSender } from "../services/reminderDispatchService.js";
+import { encryptLegacyMedications } from "../services/medicationService.js";
+import { isEncryptionConfigured } from "../services/fieldEncryption.js";
 
 const internalReminderDispatchRoutes = Router();
 
@@ -75,6 +77,16 @@ internalReminderDispatchRoutes.post("/dispatch", async (request: Request, respon
             { pool: getDatabasePool(), sender, now: () => new Date() },
             { dryRun }
         );
+
+        // Migração gradual: cifra medicamentos antigos ainda em texto puro. Nunca derruba
+        // o despacho — se falhar, tenta de novo na próxima execução do cron.
+        if (!dryRun && isEncryptionConfigured()) {
+            try {
+                await encryptLegacyMedications(getDatabasePool());
+            } catch (error) {
+                console.error("Falha ao cifrar medicamentos antigos.", error);
+            }
+        }
 
         // NUNCA incluir chat_id, nome de medicamento, e-mail ou qualquer outro dado
         // pessoal na resposta: só contagens.

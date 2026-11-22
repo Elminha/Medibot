@@ -1,4 +1,5 @@
 import { getDatabasePool } from "../database/database.js";
+import { decryptField } from "./fieldEncryption.js";
 import { getMedicationById } from "./medicationService.js";
 import {
     replaceReminderChannels,
@@ -99,7 +100,7 @@ function toReminder(row: ReminderRow, today: string): Reminder {
     return {
         id: Number(row.id),
         medicationId: Number(row.medication_id),
-        medicationName: row.medication_name,
+        medicationName: decryptField("medications.name", row.medication_name),
         times,
         weekdays,
         startsOn: row.starts_on,
